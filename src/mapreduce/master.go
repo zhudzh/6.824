@@ -1,4 +1,5 @@
 package mapreduce
+
 import "container/list"
 import "fmt"
 
@@ -27,6 +28,37 @@ func (mr *MapReduce) KillWorkers() *list.List {
 }
 
 func (mr *MapReduce) RunMaster() *list.List {
-  // Your code here
+  // mr.nMap = nmap
+  // mr.nReduce = nreduce
+  // mr.file = file
+  // mr.MasterAddress = master
+  // mr.alive = true
+  // mr.registerChannel = make(chan string)
+  // mr.DoneChannel = make(chan bool)
+
+  //   File string
+  // Operation JobType
+  // JobNumber int       // this job's number
+  // NumOtherPhase int   // total number of jobs in other phase (map or reduce)
+
+  //only return when all map and reduce tasks have been executed
+  // master wants to: listen to channel- when receives connection, send job through RPC
+  // quits when done is all finished
+  fmt.Println(mr.nMap, mr.nReduce)
+
+  worker_info := WorkerInfo{address : <- mr.registerChannel}
+
+  args := new(DoJobArgs)
+  args.File = mr.file
+  args.Operation = Map
+  args.NumOtherPhase = mr.nReduce
+
+  var reply DoJobReply
+  call(worker_info.address, "Worker.DoJob", args, &reply)
+
+  done := <- mr.DoneChannel
+  if done {
+    return mr.KillWorkers()
+  } 
   return mr.KillWorkers()
 }

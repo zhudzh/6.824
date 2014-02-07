@@ -20,6 +20,7 @@ type Worker struct {
 
 // The master sent us a job
 func (wk *Worker) DoJob(arg *DoJobArgs, res *DoJobReply) error {
+  fmt.Println("we have a job to do!!")
   fmt.Printf("Dojob %s job %d file %s operation %v N %d\n",
              wk.name, arg.JobNumber, arg.File, arg.Operation,
              arg.NumOtherPhase)
