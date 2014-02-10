@@ -114,9 +114,8 @@ func (mr *MapReduce) RunMaster() *list.List {
 	}()
 	
 	for get_job(map_jobs) != -1{
-		time.Sleep(1200)
+		time.Sleep(600)
 	}
-	time.Sleep(1200)
 
 	// fmt.Println("Maps are done!")
 
@@ -137,26 +136,25 @@ func (mr *MapReduce) RunMaster() *list.List {
 		}
 	}()
 
-	go func() {
-		for worker_info, _ := range workers {
-			go func(){
-				for get_job(reduce_jobs) != -1{
-					var reply DoJobReply //initialize reply
-					reply = send_job(worker_info, Reduce, reply)
-					if ! reply.OK {
-						break
-					}
-				}
-			}()
-		}
-	}()
+	// go func() {
+	// 	for worker_info, _ := range workers {
+	// 		go func(){
+	// 			for get_job(reduce_jobs) != -1{
+	// 				var reply DoJobReply //initialize reply
+	// 				reply = send_job(worker_info, Reduce, reply)
+	// 				if ! reply.OK {
+	// 					break
+	// 				}
+	// 			}
+	// 		}()
+	// 	}
+	// }()
 	
 	// fmt.Println(reduce_jobs)
 	for get_job(reduce_jobs) != -1{
-		time.Sleep(1200)
+		time.Sleep(600)
 	}
 
-	time.Sleep(1200)
 
 
 	return mr.KillWorkers()
