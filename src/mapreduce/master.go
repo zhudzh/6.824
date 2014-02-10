@@ -106,6 +106,7 @@ func (mr *MapReduce) RunMaster() *list.List {
 					var reply DoJobReply //initialize reply
 					reply = send_job(worker_info, Map, reply)
 					if ! reply.OK {
+						del(workers, worker_info)
 						break
 					}
 				}
@@ -129,6 +130,7 @@ func (mr *MapReduce) RunMaster() *list.List {
 					var reply DoJobReply //initialize reply
 					reply = send_job(worker_info, Reduce, reply)
 					if ! reply.OK {
+						del(workers, worker_info)
 						break
 					}
 				}
@@ -136,19 +138,20 @@ func (mr *MapReduce) RunMaster() *list.List {
 		}
 	}()
 
-	// go func() {
-	// 	for worker_info, _ := range workers {
-	// 		go func(){
-	// 			for get_job(reduce_jobs) != -1{
-	// 				var reply DoJobReply //initialize reply
-	// 				reply = send_job(worker_info, Reduce, reply)
-	// 				if ! reply.OK {
-	// 					break
-	// 				}
-	// 			}
-	// 		}()
-	// 	}
-	// }()
+	go func() {
+		for worker_info, _ := range workers {
+			go func(){
+				for get_job(reduce_jobs) != -1{
+					var reply DoJobReply //initialize reply
+					reply = send_job(worker_info, Reduce, reply)
+					if ! reply.OK {
+						del(workers, worker_info)
+						break
+					}
+				}
+			}()
+		}
+	}()
 	
 	// fmt.Println(reduce_jobs)
 	for get_job(reduce_jobs) != -1{
