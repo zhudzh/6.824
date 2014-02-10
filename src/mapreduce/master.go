@@ -3,6 +3,7 @@ package mapreduce
 import "container/list"
 import "fmt"
 import "time"
+// import "reflect"
 
 type WorkerInfo struct {
 	address string
@@ -29,60 +30,129 @@ func (mr *MapReduce) KillWorkers() *list.List {
 }
 
 func (mr *MapReduce) RunMaster() *list.List {
-	// mr.nMap = nmap
-	// mr.nReduce = nreduce
-	// mr.file = file
-	// mr.MasterAddress = master
-	// mr.alive = true
-	// mr.registerChannel = make(chan string)
-	// mr.DoneChannel = make(chan bool)
 
-	//   File string
-	// Operation JobType
-	// JobNumber int       // this job's number
-	// NumOtherPhase int   // total number of jobs in other phase (map or reduce)
 
-	//only return when all map and reduce tasks have been executed
-	// master wants to: listen to channel- when receives connection, send job through RPC
-	// quits when done is all finished
-	fmt.Println(mr.nMap, mr.nReduce)
+	workers := make(map[WorkerInfo]bool)
 
-	numWorkersConnected := 0
-	numPosReplies := 0
+	var map_jobs []string
+	map_jobs = make([]string, mr.nMap, mr.nMap)
 
-	var worker_info WorkerInfo
-	var reply DoJobReply
+	var reduce_jobs []string
+	reduce_jobs = make([]string, mr.nReduce, mr.nReduce)
 
-	go func() {
-		for {
-			fmt.Println("got here")
-			worker_info = WorkerInfo{address : <- mr.registerChannel}
-			fmt.Println(worker_info)
-			numWorkersConnected += 1
 
-			for {
-				if numPosReplies >= mr.nMap{
-					fmt.Println("Breaking loop")
-					break
-				} else {
-					args := new(DoJobArgs)
-					args.File = mr.file
-					args.Operation = Map
-					args.NumOtherPhase = mr.nReduce
-					call(worker_info.address, "Worker.DoJob", args, &reply)
-					if reply.OK {
-						numPosReplies +=1
-					}
+
+	get_job := func(jobs_array []string) int{
+		//return first empty string, then return fist pending string
+		for idx, _ := range jobs_array{
+			if jobs_array[idx] == "" {
+				return idx
+			}
+		}
+		for idx, _ := range jobs_array{
+			if jobs_array[idx] == "pending" {
+				return idx
+			}
+		}
+		return -1 // all strings done
+	}
+	send_job := func(worker_info WorkerInfo, job JobType, reply DoJobReply) DoJobReply{
+		//initialize args
+		args := new(DoJobArgs)
+		args.File = mr.file
+		args.Operation = job
+		switch job {
+			case Map:
+				args.JobNumber = get_job(map_jobs)
+				map_jobs[args.JobNumber] = "pending"
+				args.NumOtherPhase = mr.nReduce
+			case Reduce:
+				args.JobNumber = get_job(reduce_jobs)
+				reduce_jobs[args.JobNumber] = "pending"
+				args.NumOtherPhase = mr.nMap
+		}
+
+		call(worker_info.address, "Worker.DoJob", args, &reply)
+		if reply.OK {
+			switch job {
+			case Map:
+				map_jobs[args.JobNumber] = "done"
+			case Reduce:
+				reduce_jobs[args.JobNumber] = "done"
+			}
+		} else {
+			switch job {
+			case Map:
+				if map_jobs[args.JobNumber] == "pending"{
+					map_jobs[args.JobNumber] = ""
+				}
+				
+			case Reduce:
+				if reduce_jobs[args.JobNumber] == "pending"{
+					reduce_jobs[args.JobNumber] = ""
 				}
 			}
 		}
-	}()
-	for {
-		if numPosReplies >= mr.nMap{
-			break
-		} else {
-			time.Sleep(1000)
+		return reply
+	}
+
+	go func() {
+		for {
+			worker_info := WorkerInfo{address : <- mr.registerChannel}
+			// fmt.Println("registered: ", worker_info)
+			workers[worker_info] = true
+			go func(){
+				for get_job(map_jobs) != -1{
+					var reply DoJobReply //initialize reply
+					reply = send_job(worker_info, Map, reply)
+					if ! reply.OK {
+						break
+					}
+				}
+			}()
 		}
+	}()
+	
+	for get_job(map_jobs) != -1{
+		time.Sleep(500)
+	}
+
+	// fmt.Println("Maps are done!")
+
+	go func() {
+		for {
+			worker_info := WorkerInfo{address : <- mr.registerChannel}
+			// fmt.Println("registered: ", worker_info)
+			workers[worker_info] = true
+			go func(){
+				for get_job(reduce_jobs) != -1{
+					var reply DoJobReply //initialize reply
+					reply = send_job(worker_info, Reduce, reply)
+					if ! reply.OK {
+						break
+					}
+				}
+			}()
+		}
+	}()
+
+	go func() {
+		for worker_info, _ := range workers {
+			go func(){
+				for get_job(reduce_jobs) != -1{
+					var reply DoJobReply //initialize reply
+					reply = send_job(worker_info, Reduce, reply)
+					if ! reply.OK {
+						break
+					}
+				}
+			}()
+		}
+	}()
+	
+	// fmt.Println(reduce_jobs)
+	for get_job(reduce_jobs) != -1{
+		time.Sleep(500)
 	}
 
 
