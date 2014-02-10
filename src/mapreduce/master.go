@@ -116,6 +116,7 @@ func (mr *MapReduce) RunMaster() *list.List {
 	for get_job(map_jobs) != -1{
 		time.Sleep(1000)
 	}
+	time.Sleep(1000)
 
 	// fmt.Println("Maps are done!")
 
@@ -155,6 +156,7 @@ func (mr *MapReduce) RunMaster() *list.List {
 		time.Sleep(1000)
 	}
 
+	time.Sleep(1000)
 
 
 	return mr.KillWorkers()
