@@ -5,17 +5,16 @@ import "fmt"
 // import "strconv"
 // import "reflect"
 
-
 func main() {
-	// str := "1"
-	// num, _ := strconv.Atoi(str)
-	// fmt.Println(reflect.TypeOf(string(num)))
-	// fmt.Println(num)
-	// fmt.Println(strconv.Itoa(num))
-	operation := "Map"
-	switch operation {
-  case "Map":
-  	fmt.Println("got here")
-  case "Reduce":
-  }
+	// nMap := 20
+
+	var s []string
+	s = make([]string, 5, 5)
+	fmt.Println(s)
+	if s[0] {
+		fmt.Println("true")
+	} else {
+		fmt.Println("false")
+	}
+
 }
