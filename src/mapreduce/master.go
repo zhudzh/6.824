@@ -125,7 +125,7 @@ func (mr *MapReduce) RunMaster() *list.List {
 	go func() {
 		for {
 			worker_info := WorkerInfo{address : <- mr.registerChannel}
-			fmt.Println("registered: ", worker_info)
+			// fmt.Println("registered: ", worker_info)
 			workers[worker_info] = true
 			go func(){
 				for get_job(reduce_jobs) != -1{
@@ -142,7 +142,7 @@ func (mr *MapReduce) RunMaster() *list.List {
 
 	go func() {
 		for worker_info, _ := range workers {
-			fmt.Println("using worker: ", worker_info)
+			// fmt.Println("using worker: ", worker_info)
 			workers[worker_info] = false
 			go func(){
 				for get_job(reduce_jobs) != -1{
@@ -164,9 +164,9 @@ func (mr *MapReduce) RunMaster() *list.List {
 
 	time.Sleep(10* time.Second)
 
-	for worker_info, value := range workers {
-			fmt.Println("reg workers: ", worker_info, value)
-	}
+	// for worker_info, value := range workers {
+	// 		fmt.Println("reg workers: ", worker_info, value)
+	// }
 
 
 	return mr.KillWorkers()
