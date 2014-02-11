@@ -124,7 +124,7 @@ func (mr *MapReduce) RunMaster() *list.List {
 		for {
 			worker_info := WorkerInfo{address : <- mr.registerChannel}
 			fmt.Println("registered: ", worker_info)
-			// workers[worker_info] = true
+			workers[worker_info] = true
 			go func(){
 				for get_job(reduce_jobs) != -1{
 					var reply DoJobReply //initialize reply
@@ -158,6 +158,8 @@ func (mr *MapReduce) RunMaster() *list.List {
 	for get_job(reduce_jobs) != -1{
 		time.Sleep(600)
 	}
+
+	time.Sleep(10000)
 
 	for worker_info, _ := range workers {
 			fmt.Println("reg workers: ", worker_info)
