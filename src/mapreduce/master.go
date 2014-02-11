@@ -159,7 +159,7 @@ func (mr *MapReduce) RunMaster() *list.List {
 		time.Sleep(600)
 	}
 
-	time.Sleep(5* time.Second)
+	time.Sleep(10* time.Second)
 
 	for worker_info, _ := range workers {
 			fmt.Println("reg workers: ", worker_info)
