@@ -118,6 +118,8 @@ func (mr *MapReduce) RunMaster() *list.List {
 		time.Sleep(600)
 	}
 
+	time.Sleep(10* time.Second)
+
 	// fmt.Println("Maps are done!")
 
 	go func() {
