@@ -80,19 +80,7 @@ func (mr *MapReduce) RunMaster() *list.List {
 			case Reduce:
 				reduce_jobs[args.JobNumber] = "done"
 			}
-		} else {
-			switch job {
-			case Map:
-				if map_jobs[args.JobNumber] == "pending"{
-					map_jobs[args.JobNumber] = ""
-				}
-				
-			case Reduce:
-				if reduce_jobs[args.JobNumber] == "pending"{
-					reduce_jobs[args.JobNumber] = ""
-				}
-			}
-		}
+		} 
 		return reply
 	}
 
@@ -115,7 +103,7 @@ func (mr *MapReduce) RunMaster() *list.List {
 	}()
 	
 	for get_job(map_jobs) != -1{
-		time.Sleep(600)
+		time.Sleep(1* time.Second)
 	}
 
 	time.Sleep(10* time.Second)
@@ -159,7 +147,7 @@ func (mr *MapReduce) RunMaster() *list.List {
 	
 	// fmt.Println(reduce_jobs)
 	for get_job(reduce_jobs) != -1{
-		time.Sleep(600)
+		time.Sleep(1* time.Second)
 	}
 
 	time.Sleep(10* time.Second)
