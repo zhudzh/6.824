@@ -21,6 +21,7 @@ type ViewServer struct {
 	has_heard_from_primary bool
 	missing_backup_pings int
 	missing_primary_pings int
+	missing_secondary_backup_pings int
 	secondary_backup string
 }
 
@@ -72,6 +73,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 		//there is no secondary backup -> add secondary backup
 		// fmt.Println("No secondary backup! secondary backup is now me", args.Me)
 		vs.secondary_backup = args.Me
+		vs.missing_secondary_backup_pings = 0
 	} else {
 		// fmt.Println("default", args.Me, vs.view.Viewnum, vs.view.Primary, vs.view.Backup)
 
@@ -81,6 +83,8 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 		vs.missing_backup_pings = 0
 	} else if args.Me == vs.view.Primary{
 		vs.missing_primary_pings = 0
+	} else if args.Me == vs.secondary_backup{
+		vs.missing_secondary_backup_pings = 0
 	}
 
 	reply.View = vs.view
@@ -110,9 +114,14 @@ func (vs *ViewServer) tick() {
 
 	vs.missing_backup_pings++
 	vs.missing_primary_pings++
+	vs.missing_secondary_backup_pings++
 
 	if vs.missing_primary_pings >= DeadPings && vs.missing_backup_pings >= DeadPings{
-		// fmt.Println("both primary and secondary crashed due to timeout")
+		fmt.Println("both primary and secondary crashed due to timeout")
+	}
+
+	if vs.missing_secondary_backup_pings >= DeadPings {
+		vs.secondary_backup = ""
 	}
 
 	if vs.missing_backup_pings >= DeadPings && vs.has_heard_from_primary{
@@ -158,6 +167,7 @@ func StartServer(me string) *ViewServer {
 	vs.has_heard_from_primary = true
 	vs.missing_backup_pings = 0
 	vs.missing_primary_pings = 0
+	vs.missing_secondary_backup_pings = 0
 	vs.secondary_backup = ""
 
 	// tell net/rpc about our RPC server and handlers.
