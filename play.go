@@ -2,19 +2,29 @@ package main
 
 import "fmt"
 // import "regexp"
-// import "strconv"
+import "strconv"
 // import "reflect"
+import "time"
 
 func main() {
-	// nMap := 20
+	// one go func that adds to workers
+	workers := make(map[string]bool)
+	fmt.Println("got here")
+	go func() {
+		fmt.Println("got here")
+		for i:=0; i < 1000; i++{
+			workers[strconv.Itoa(i)] = true
+		}
+	}()
 
-	var s []string
-	s = make([]string, 5, 5)
-	fmt.Println(s)
-	if s[0] {
-		fmt.Println("true")
-	} else {
-		fmt.Println("false")
-	}
+	fmt.Println(workers)
+
+	go func() {
+		fmt.Println("got here2")
+		time.Sleep(200)
+		for worker_info, _ := range workers {
+			fmt.Println(worker_info)
+		}
+	}()
 
 }
