@@ -1,0 +1,1 @@
+Are systems like this (implementing fault tolerance at a hypvervisor/VM level) ever actually used? Why/why not?
