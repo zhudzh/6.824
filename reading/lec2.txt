@@ -1,0 +1,3 @@
+Should I use go channels every time there are multiple threads which may access a variable? When is it ok to use a shared map or other data structure instead?
+
+For example, I implemented lab1 using a shared data structure (map) which kept track of each task (either not assigned, pending, or done). This was able to pass the tests, but I was wondering if this is 'incorrect' and too hacky of a a solution
