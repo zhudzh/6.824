@@ -9,6 +9,16 @@ import "sync"
 import "fmt"
 import "os"
 
+// Debugging
+const Debug = 0
+
+func DPrintf(format string, a ...interface{}) (n int, err error) {
+	if Debug > 0 {
+		n, err = fmt.Printf(format + "\n", a...)
+	}
+	return
+}
+
 type ViewServer struct {
 	mu sync.Mutex
 	l net.Listener
@@ -34,18 +44,18 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 
 	if args.Viewnum == 0 && vs.view.Primary == "" {
 		//first time- initialize this machine to primary
-		// fmt.Println ("No primary! primary is now me")
+		DPrintf(" Message at VS: No primary! primary is now me %s", args.Me)
 		vs.view = View{Viewnum: vs.view.Viewnum + 1, Primary: args.Me, Backup: ""}
 		vs.has_heard_from_primary = false
 
 	} else if args.Me == vs.view.Primary && args.Viewnum == vs.view.Viewnum && ! vs.has_heard_from_primary {
 		//primary has acknowledged new responsibility -> OK to change view
-		// fmt.Println("Primary just acknowledged")
+		DPrintf(" Message at VS: Primary just acknowledged")
 		vs.has_heard_from_primary = true
 
 	} else if args.Me == vs.view.Primary && args.Viewnum == 0 && vs.has_heard_from_primary{
 		//primary has crashed -> backup becomes primary
-		// fmt.Println("primary crashed! New Primary ", args.Me)
+		DPrintf(" Message at VS: primary crashed! New Primary ", args.Me)
 		vs.view = View{Viewnum: vs.view.Viewnum + 1, Primary: vs.view.Backup, Backup: ""}
 		if vs.secondary_backup != ""{
 			vs.view.Backup = vs.secondary_backup
@@ -55,7 +65,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 
 	} else if args.Me == vs.view.Backup && args.Viewnum == 0 && vs.has_heard_from_primary{
 		//backup has crashed -> remove backup
-		// fmt.Println("backup crashed! New Backup from secondary ", vs.secondary_backup)
+		DPrintf(" Message at VS: backup crashed! New Backup from secondary ", vs.secondary_backup)
 		vs.view = View{Viewnum: vs.view.Viewnum + 1, Primary: vs.view.Primary, Backup: ""}
 		if vs.secondary_backup != ""{
 			vs.view.Backup = vs.secondary_backup
@@ -65,17 +75,18 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 
 	} else if vs.view.Backup == "" && vs.view.Primary != args.Me && vs.has_heard_from_primary{
 		//there is no backup -> initialize this machine to backup
-		// fmt.Println("No backup! backup is now me ", args.Me)
+		DPrintf(" Message at VS: No backup! backup is now me ", args.Me)
 		vs.view = View{Viewnum: vs.view.Viewnum + 1, Primary: vs.view.Primary, Backup: args.Me}
 		vs.has_heard_from_primary = false
 
 	} else if vs.secondary_backup == "" && args.Me != vs.view.Primary && args.Me != vs.view.Backup {
 		//there is no secondary backup -> add secondary backup
-		// fmt.Println("No secondary backup! secondary backup is now me", args.Me)
+		DPrintf(" Message at VS: No secondary backup! secondary backup is now me", args.Me)
 		vs.secondary_backup = args.Me
 		vs.missing_secondary_backup_pings = 0
 	} else {
-		// fmt.Println("default", args.Me, vs.view.Viewnum, vs.view.Primary, vs.view.Backup)
+		// DPrintf(" Message at VS: default case", args.Me, vs.view.Viewnum, vs.view.Primary, vs.view.Backup)
+		DPrintf(" Message at VS: default case received by %s", args.Me)
 
 	}
 
@@ -116,7 +127,7 @@ func (vs *ViewServer) tick() {
 	vs.missing_primary_pings++
 	vs.missing_secondary_backup_pings++
 
-	if vs.missing_primary_pings >= DeadPings && vs.missing_backup_pings >= DeadPings{
+	if vs.missing_primary_pings >= DeadPings && vs.missing_backup_pings >= DeadPings && vs.view.Primary != "" {
 		fmt.Println("both primary and secondary crashed due to timeout")
 	}
 
@@ -126,18 +137,18 @@ func (vs *ViewServer) tick() {
 
 	if vs.missing_backup_pings >= DeadPings && vs.has_heard_from_primary{
 		//backup has crashed -> remove backup
-		// fmt.Println("backup crashed due to timeout!")
+		DPrintf(" Message at VS: backup crashed due to timeout!")
 		vs.view = View{Viewnum: vs.view.Viewnum + 1, Primary: vs.view.Primary, Backup: ""}
 		if vs.secondary_backup != ""{
 			vs.view.Backup = vs.secondary_backup
 			vs.secondary_backup = ""
 		}
 		vs.has_heard_from_primary = false
-		// fmt.Println(vs.view.Viewnum, vs.view.Primary, vs.view.Backup)
+		// DPrintf(v Message at VS: s.view.Viewnum, vs.view.Primary, vs.view.Backup)
 
 	} else if vs.missing_primary_pings >= DeadPings && vs.has_heard_from_primary{
 		//primary has crashed -> backup becomes primary
-		// fmt.Println("primary crashed due to timeout!")
+		DPrintf(" Message at VS: primary crashed due to timeout!")
 		vs.view = View{Viewnum: vs.view.Viewnum + 1, Primary: vs.view.Backup, Backup: ""}
 		if vs.secondary_backup != ""{
 			vs.view.Backup = vs.secondary_backup

@@ -37,6 +37,30 @@ type GetReply struct {
 
 // Your RPC definitions here.
 
+type StateTransferArgs struct{
+  Kv map[string]string
+}
+
+type StateTransferReply struct{
+  Err Err
+}
+
+type GetUpdateArgs struct{
+  
+}
+
+type GetUpdateReply struct{
+  
+}
+
+type PutUpdateArgs struct{
+  
+}
+
+type PutUpdateReply struct{
+  
+}
+
 func hash(s string) uint32 {
   h := fnv.New32a()
   h.Write([]byte(s))

@@ -4,25 +4,25 @@ import "viewservice"
 import "net/rpc"
 import "fmt"
 
+// import "reflect"
 // You'll probably need to uncomment these:
 // import "time"
 // import "crypto/rand"
 // import "math/big"
 
 
-
 type Clerk struct {
-  vs *viewservice.Clerk
-  // Your declarations here
+	vs *viewservice.Clerk
+	// Your declarations here
 }
 
 
 func MakeClerk(vshost string, me string) *Clerk {
-  ck := new(Clerk)
-  ck.vs = viewservice.MakeClerk(me, vshost)
-  // Your ck.* initializations here
+	ck := new(Clerk)
+	ck.vs = viewservice.MakeClerk(me, vshost)
+	// Your ck.* initializations here
 
-  return ck
+	return ck
 }
 
 
@@ -42,21 +42,20 @@ func MakeClerk(vshost string, me string) *Clerk {
 // please use call() to send all RPCs, in client.go and server.go.
 // please don't change this function.
 //
-func call(srv string, rpcname string,
-          args interface{}, reply interface{}) bool {
-  c, errx := rpc.Dial("unix", srv)
-  if errx != nil {
-    return false
-  }
-  defer c.Close()
-    
-  err := c.Call(rpcname, args, reply)
-  if err == nil {
-    return true
-  }
+func call(srv string, rpcname string, args interface{}, reply interface{}) bool {
+	c, errx := rpc.Dial("unix", srv)
+	if errx != nil {
+		return false
+	}
+	defer c.Close()
+		
+	err := c.Call(rpcname, args, reply)
+	if err == nil {
+		return true
+	}
 
-  fmt.Println(err)
-  return false
+	fmt.Println(err)
+	return false
 }
 
 //
@@ -67,26 +66,64 @@ func call(srv string, rpcname string,
 // says the key doesn't exist (has never been Put().
 //
 func (ck *Clerk) Get(key string) string {
+	//Todo: add keep trying behavior
+	DPrintf("client sends get request")
+	//get primary from vs
+	primary := ck.vs.Primary()
 
-  // Your code here.
-
-  return "???"
+	args := &GetArgs{Key: key}
+	var reply GetReply
+	ok := call(primary, "PBServer.Get", args, &reply)
+	if ok == false || reply.Err != OK  {
+		DPrintf("client received failed get request! %s %s", ok, reply.Err)
+	}
+	return reply.Value
 }
+
+// type StateTransferArgs struct{
+//   Kv map[string][string]
+// }
+
+// type StateTransferReply struct{
+//   Err Err
+// }
+func (ck *Clerk) TransferState() {
+	DPrintf("primary attempts to transfer state to backup!")
+	// //get primary from vs
+	// primary := ck.vs.Primary()
+
+	// args := &GetArgs{Key: key}
+	// var reply GetReply
+	// ok := call(primary, "PBServer.Get", args, &reply)
+	// if ok == false || reply.Err != OK  {
+	// 	DPrintf("client received failed get request! %s %s", ok, reply.Err)
+	// }
+	// return reply.Value
+}
+
+
 
 //
 // tell the primary to update key's value.
 // must keep trying until it succeeds.
 //
 func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
-
-  // Your code here.
-  return "???"
+	DPrintf("client sends put request")
+	primary := ck.vs.Primary()
+	
+	args := &PutArgs{Key: key, Value: value, DoHash: dohash}
+	var reply PutReply
+	ok := call(primary, "PBServer.Put", args, &reply)
+	if ok == false || reply.Err != OK  {
+		DPrintf("client received failed put request! %s %s", ok, reply.Err)
+	}
+	return reply.PreviousValue
 }
 
 func (ck *Clerk) Put(key string, value string) {
-  ck.PutExt(key, value, false)
+	ck.PutExt(key, value, false)
 }
 func (ck *Clerk) PutHash(key string, value string) string {
-  v := ck.PutExt(key, value, true)
-  return v
+	v := ck.PutExt(key, value, true)
+	return v
 }
