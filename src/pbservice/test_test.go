@@ -61,7 +61,9 @@ func TestBasicFail(t *testing.T) {
   ck.Put("1", "v1a")
   check(ck, "1", "v1a")
 
+  
   fmt.Printf("  ... Passed\n")
+  time.Sleep(1 * time.Second)
 
   // add a backup
 
@@ -89,7 +91,9 @@ func TestBasicFail(t *testing.T) {
   ck.Put("4", "44")
   check(ck, "4", "44")
 
+  
   fmt.Printf("  ... Passed\n")
+  time.Sleep(1 * time.Second)
 
   // kill the primary
 
@@ -112,7 +116,9 @@ func TestBasicFail(t *testing.T) {
   check(ck, "3", "33")
   check(ck, "4", "44")
 
+  
   fmt.Printf("  ... Passed\n")
+  time.Sleep(1 * time.Second)
 
   // kill solo server, start new server, check that
   // it does not start serving as primary
@@ -132,7 +138,9 @@ func TestBasicFail(t *testing.T) {
     t.Fatalf("ck.Get() returned even though no initialized primary")
   }
 
+  
   fmt.Printf("  ... Passed\n")
+  time.Sleep(1 * time.Second)
 
   s1.kill()
   s2.kill()
@@ -189,7 +197,9 @@ func TestAtMostOnce(t *testing.T) {
     t.Fatalf("ck.Get() returned %v but expected %v\n", v, val)
   }
 
+  
   fmt.Printf("  ... Passed\n")
+  time.Sleep(1 * time.Second)
 
   for i := 0; i < nservers; i++ {
     sa[i].kill()
@@ -257,7 +267,9 @@ func TestFailPut(t *testing.T) {
   }
 
   check(ck, "a", "aaa")
+  
   fmt.Printf("  ... Passed\n")
+  time.Sleep(1 * time.Second)
 
   // kill primary, then immediate Put
   fmt.Printf("Test: Put() immediately after primary failure ...\n")
@@ -277,7 +289,9 @@ func TestFailPut(t *testing.T) {
   check(ck, "a", "aaa")
   check(ck, "b", "bbb")
   check(ck, "c", "cc")
+  
   fmt.Printf("  ... Passed\n")
+  time.Sleep(1 * time.Second)
 
   s1.kill()
   s2.kill()
@@ -334,7 +348,7 @@ func TestConcurrentSame(t *testing.T) {
     }(xi)
   }
 
-  time.Sleep(5 * time.Second)
+  time.Sleep(1 * time.Second)
   done = true
   time.Sleep(time.Second)
 
@@ -375,7 +389,9 @@ func TestConcurrentSame(t *testing.T) {
     }
   }
 
+  
   fmt.Printf("  ... Passed\n")
+  time.Sleep(1 * time.Second)
 
   for i := 0; i < nservers; i++ {
     sa[i].kill()
@@ -431,7 +447,7 @@ func TestConcurrentSameUnreliable(t *testing.T) {
     }(xi)
   }
 
-  time.Sleep(5 * time.Second)
+  time.Sleep(1 * time.Second)
   done = true
   time.Sleep(time.Second)
 
@@ -472,7 +488,9 @@ func TestConcurrentSameUnreliable(t *testing.T) {
     }
   }
 
+  
   fmt.Printf("  ... Passed\n")
+  time.Sleep(1 * time.Second)
 
   for i := 0; i < nservers; i++ {
     sa[i].kill()
@@ -580,7 +598,9 @@ func TestRepeatedCrash(t *testing.T) {
     t.Fatalf("final Put/Get failed")
   }
 
+  
   fmt.Printf("  ... Passed\n")
+  time.Sleep(1 * time.Second)
 
   for i := 0; i < nservers; i++ {
     sa[i].kill()
@@ -692,7 +712,9 @@ func TestRepeatedCrashUnreliable(t *testing.T) {
     t.Fatalf("final Put/Get failed")
   }
 
+  
   fmt.Printf("  ... Passed\n")
+  time.Sleep(1 * time.Second)
 
   for i := 0; i < nservers; i++ {
     sa[i].kill()
@@ -835,14 +857,16 @@ func TestPartition1(t *testing.T) {
   check(ck2, "a", "111")
 
   // wait for the background Get to s1 to be delivered.
-  time.Sleep(5 * time.Second)
+  time.Sleep(1 * time.Second)
   if stale_get {
     t.Fatalf("Get to old primary succeeded and produced stale value")
   }
 
   check(ck2, "a", "111")
 
+  
   fmt.Printf("  ... Passed\n")
+  time.Sleep(1 * time.Second)
 
   s1.kill()
   s2.kill()
@@ -940,7 +964,9 @@ func TestPartition2(t *testing.T) {
 
   check(ck2, "a", "2")
 
+  
   fmt.Printf("  ... Passed\n")
+  time.Sleep(1 * time.Second)
 
   s1.kill()
   s2.kill()

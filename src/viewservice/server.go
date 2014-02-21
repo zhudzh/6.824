@@ -128,7 +128,7 @@ func (vs *ViewServer) tick() {
 	vs.missing_secondary_backup_pings++
 
 	if vs.missing_primary_pings >= DeadPings && vs.missing_backup_pings >= DeadPings && vs.view.Primary != "" {
-		fmt.Println("both primary and secondary crashed due to timeout")
+		DPrintf("both primary and secondary crashed due to timeout")
 	}
 
 	if vs.missing_secondary_backup_pings >= DeadPings {
