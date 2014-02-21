@@ -7,9 +7,9 @@ import "fmt"
 // import "time"
 
 func main() {
-	kv := make(map[string]string)
-	kv["hi"] = "hey"
-	fmt.Println(kv["hiy"])
-	fmt.Println(kv)
+	var a int64
+	a = 6
+	fmt.Printf("var a is %d", a)
+
 
 }

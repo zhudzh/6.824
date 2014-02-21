@@ -14,6 +14,8 @@ type PutArgs struct {
   Value string
   DoHash bool // For PutHash
   // You'll have to add definitions here.
+  SeqNum int64
+  ClientID int64
 
   // Field names must start with capital letters,
   // otherwise RPC will break.
@@ -27,6 +29,8 @@ type PutReply struct {
 type GetArgs struct {
   Key string
   // You'll have to add definitions here.
+  SeqNum int64
+  ClientID int64
 }
 
 type GetReply struct {
@@ -39,6 +43,7 @@ type GetReply struct {
 
 type StateTransferArgs struct{
   Kv map[string]string
+  ClientMap map[int64]map[int64]string
 }
 
 type StateTransferReply struct{
@@ -46,19 +51,26 @@ type StateTransferReply struct{
 }
 
 type GetUpdateArgs struct{
-  
+  Key string
+  Value string
+  SeqNum int64
+  ClientID int64
 }
 
 type GetUpdateReply struct{
-  
+  Err Err
+  Value string
 }
 
 type PutUpdateArgs struct{
-  
+  Key string
+  Value string
+  SeqNum int64
+  ClientID int64
 }
 
 type PutUpdateReply struct{
-  
+  Err Err
 }
 
 func hash(s string) uint32 {

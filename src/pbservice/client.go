@@ -3,17 +3,19 @@ package pbservice
 import "viewservice"
 import "net/rpc"
 import "fmt"
+// import "log"
 
-// import "reflect"
 // You'll probably need to uncomment these:
-// import "time"
-// import "crypto/rand"
-// import "math/big"
+import "time"
+import "crypto/rand"
+import "math/big"
 
 
 type Clerk struct {
 	vs *viewservice.Clerk
 	// Your declarations here
+	id int64
+	seq_num int64
 }
 
 
@@ -21,11 +23,19 @@ func MakeClerk(vshost string, me string) *Clerk {
 	ck := new(Clerk)
 	ck.vs = viewservice.MakeClerk(me, vshost)
 	// Your ck.* initializations here
+	ck.id = nrand()
+	ck.seq_num = 0
 
 	return ck
 }
 
 
+func nrand() int64 {
+	max := big.NewInt(int64(1) << 62)
+	bigx, _ := rand.Int(rand.Reader, max)
+	x := bigx.Int64()
+	return x
+}
 //
 // call() sends an RPC to the rpcname handler on server srv
 // with arguments args, waits for the reply, and leaves the
@@ -52,7 +62,7 @@ func call(srv string, rpcname string, args interface{}, reply interface{}) bool 
 	err := c.Call(rpcname, args, reply)
 	if err == nil {
 		return true
-	}
+	} 
 
 	fmt.Println(err)
 	return false
@@ -66,41 +76,19 @@ func call(srv string, rpcname string, args interface{}, reply interface{}) bool 
 // says the key doesn't exist (has never been Put().
 //
 func (ck *Clerk) Get(key string) string {
-	//Todo: add keep trying behavior
-	DPrintf("client sends get request")
-	//get primary from vs
-	primary := ck.vs.Primary()
+	ck.seq_num++
+	DPrintf("client sends get request with seq_num: %d", ck.seq_num)
 
-	args := &GetArgs{Key: key}
+	args := &GetArgs{Key: key, SeqNum:ck.seq_num, ClientID: ck.id}
 	var reply GetReply
-	ok := call(primary, "PBServer.Get", args, &reply)
-	if ok == false || reply.Err != OK  {
-		DPrintf("client received failed get request! %s %s", ok, reply.Err)
+	ok := call(ck.vs.Primary(), "PBServer.Get", args, &reply)
+	for ok == false || reply.Err != OK   {
+		DPrintf("client received failed get request! OK: %t reply.Err: %s", ok, reply.Err)
+		ok = call(ck.vs.Primary(), "PBServer.Get", args, &reply)
+		time.Sleep(viewservice.PingInterval)
 	}
 	return reply.Value
 }
-
-// type StateTransferArgs struct{
-//   Kv map[string][string]
-// }
-
-// type StateTransferReply struct{
-//   Err Err
-// }
-func (ck *Clerk) TransferState() {
-	DPrintf("primary attempts to transfer state to backup!")
-	// //get primary from vs
-	// primary := ck.vs.Primary()
-
-	// args := &GetArgs{Key: key}
-	// var reply GetReply
-	// ok := call(primary, "PBServer.Get", args, &reply)
-	// if ok == false || reply.Err != OK  {
-	// 	DPrintf("client received failed get request! %s %s", ok, reply.Err)
-	// }
-	// return reply.Value
-}
-
 
 
 //
@@ -108,14 +96,18 @@ func (ck *Clerk) TransferState() {
 // must keep trying until it succeeds.
 //
 func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
-	DPrintf("client sends put request")
-	primary := ck.vs.Primary()
+	ck.seq_num++
+	DPrintf("client sends put request with seq_num: ", ck.seq_num)
 	
-	args := &PutArgs{Key: key, Value: value, DoHash: dohash}
+	args := &PutArgs{Key: key, Value: value, DoHash: dohash, SeqNum:ck.seq_num, ClientID: ck.id}
 	var reply PutReply
-	ok := call(primary, "PBServer.Put", args, &reply)
-	if ok == false || reply.Err != OK  {
-		DPrintf("client received failed put request! %s %s", ok, reply.Err)
+	ok := call(ck.vs.Primary(), "PBServer.Put", args, &reply)
+	for ok == false || reply.Err != OK  {
+		DPrintf("client received failed put request! OK: %t reply.Err: %s", ok, reply.Err)
+		// log.Fatal()
+		ok = call(ck.vs.Primary(), "PBServer.Put", args, &reply)
+		time.Sleep(viewservice.PingInterval)
+		// log.Fatal()
 	}
 	return reply.PreviousValue
 }

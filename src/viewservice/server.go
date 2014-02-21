@@ -135,9 +135,9 @@ func (vs *ViewServer) tick() {
 		vs.secondary_backup = ""
 	}
 
-	if vs.missing_backup_pings >= DeadPings && vs.has_heard_from_primary{
+	if vs.missing_backup_pings >= DeadPings && vs.has_heard_from_primary && vs.view.Backup != ""{
 		//backup has crashed -> remove backup
-		DPrintf(" Message at VS: backup crashed due to timeout!")
+		DPrintf(" Message at VS: backup %s crashed due to timeout!", vs.view.Backup)
 		vs.view = View{Viewnum: vs.view.Viewnum + 1, Primary: vs.view.Primary, Backup: ""}
 		if vs.secondary_backup != ""{
 			vs.view.Backup = vs.secondary_backup
@@ -146,9 +146,9 @@ func (vs *ViewServer) tick() {
 		vs.has_heard_from_primary = false
 		// DPrintf(v Message at VS: s.view.Viewnum, vs.view.Primary, vs.view.Backup)
 
-	} else if vs.missing_primary_pings >= DeadPings && vs.has_heard_from_primary{
+	} else if vs.missing_primary_pings >= DeadPings && vs.has_heard_from_primary && vs.view.Primary != ""{
 		//primary has crashed -> backup becomes primary
-		DPrintf(" Message at VS: primary crashed due to timeout!")
+		DPrintf(" Message at VS: primary %s crashed due to timeout!", vs.view.Primary)
 		vs.view = View{Viewnum: vs.view.Viewnum + 1, Primary: vs.view.Backup, Backup: ""}
 		if vs.secondary_backup != ""{
 			vs.view.Backup = vs.secondary_backup
