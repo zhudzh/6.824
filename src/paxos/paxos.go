@@ -28,7 +28,65 @@ import "syscall"
 import "sync"
 import "fmt"
 import "math/rand"
+import "time"
+// import "reflect"
 
+// Debugging
+const Debug = 1
+
+func DPrintf(format string, a ...interface{}) (n int, err error) {
+	if Debug > 0 {
+		n, err = fmt.Printf(format + "\n", a...)
+	}
+	return
+}
+
+const (
+	PrepareOK = "PrepareOK"
+	PrepareReject = "PrepareReject"
+	AcceptOK = "AcceptOK"
+	AcceptReject = "AcceptReject"
+)
+
+type Reply string
+
+type PrepareArgs struct {
+	PrepareNumber int
+	Seq int
+}
+
+type PrepareReply struct {
+	HighestNumberAccepted int
+	ValueAccepted interface{}
+	Reply Reply
+}
+
+type AcceptArgs struct {
+	AcceptNumber int
+	AcceptValue interface{}
+	Seq int
+}
+
+type AcceptReply struct {
+	AcceptNumber int
+	Reply Reply
+}
+
+type DecidedArgs struct {
+	DecidedValue interface{}
+	Seq int
+}
+
+type DecidedReply struct {
+}
+
+
+type PaxosInstance struct{
+	seq int
+	n_p, n_a int
+	v_a, v_decided interface{}
+
+}
 
 type Paxos struct {
 	mu sync.Mutex
@@ -39,8 +97,232 @@ type Paxos struct {
 	peers []string
 	me int // index into peers[]
 
-
 	// Your data here.
+	paxos_instances map[int] *PaxosInstance
+	z_i int
+}
+
+func (px *Paxos) generateN() int {
+	return (int(time.Now().Unix()) << 8) + px.me
+}
+
+func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
+	DPrintf("received a prepare message! at %d for seq %d", px.me, args.Seq)
+	_, exists := px.paxos_instances[args.Seq]
+	if ! exists{
+		px.makePaxosInstance(args.Seq)
+	}
+	if args.PrepareNumber > px.paxos_instances[args.Seq].n_p {
+		px.paxos_instances[args.Seq].n_p = args.PrepareNumber
+		reply.Reply = PrepareOK
+		reply.HighestNumberAccepted = px.paxos_instances[args.Seq].n_a
+		reply.ValueAccepted = px.paxos_instances[args.Seq].v_a
+	} else {
+		reply.Reply = PrepareReject
+	}
+	DPrintf("reply of server %d for seq %d is %s", px.me, args.Seq, reply.Reply)
+	return nil
+}
+
+func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
+	DPrintf("received an accept message! at %d for seq %d", px.me, args.Seq)
+	_, exists := px.paxos_instances[args.Seq]
+	if ! exists{
+		px.makePaxosInstance(args.Seq)
+	}
+	if args.AcceptNumber >= px.paxos_instances[args.Seq].n_p {
+		px.paxos_instances[args.Seq].n_p = args.AcceptNumber
+		px.paxos_instances[args.Seq].n_a = args.AcceptNumber
+		px.paxos_instances[args.Seq].v_a = args.AcceptValue
+		reply.Reply = AcceptOK
+	} else {
+		reply.Reply = AcceptReject
+	}
+	DPrintf("reply of server %d for seq %d is %s", px.me, args.Seq, reply.Reply)
+	return nil
+}
+
+func (px *Paxos) Decided(args *DecidedArgs, reply *DecidedReply) error{
+	DPrintf("received an decided message! at %d for seq %d", px.me, args.Seq)
+	_, exists := px.paxos_instances[args.Seq]
+	if ! exists{
+		px.makePaxosInstance(args.Seq)
+	}
+	px.paxos_instances[args.Seq].v_decided = args.DecidedValue
+	return nil
+}
+
+
+//
+// the application wants paxos to start agreement on
+// instance seq, with proposed value v.
+// Start() returns right away; the application will
+// call Status() to find out if/when agreement
+// is reached.
+//
+func (px *Paxos) Start(seq int, v interface{}) {
+	DPrintf("Start method called! seq: %d, proposed value: %s", seq, v)
+	DPrintf("I am %d of my peers: %s", px.me, px.peers)
+
+	_, exists := px.paxos_instances[seq]
+	if ! exists{
+		DPrintf("Start method called, but paxos instance already exists! seq: %d, proposed value: %s", seq, v)
+		px.makePaxosInstance(seq)
+	}
+
+	done, _ := px.Status(seq)
+
+
+	go func(decided bool) {
+		for ! decided {
+			n := px.generateN()
+
+			highest_n_a := 0
+			v_prime := v
+			prepare_oks := 0
+			for idx, peer := range px.peers{
+				args := &PrepareArgs{PrepareNumber: n, Seq: seq}
+				var reply PrepareReply
+				DPrintf("Sending prepare message to %d with seq %d with prepare number %d", idx, seq, n)
+				if idx == px.me {
+					px.Prepare(args, &reply)
+				} else {
+					call(peer, "Paxos.Prepare", args, &reply)
+				}
+				if reply.Reply == PrepareOK{
+					DPrintf("Processed a PrepareOK at %d with seq %d", idx, seq)
+					prepare_oks++
+					if reply.HighestNumberAccepted > highest_n_a {
+						highest_n_a = reply.HighestNumberAccepted
+						v_prime = reply.ValueAccepted
+					}
+				}
+			}
+			if prepare_oks < len(px.peers)/ 2 + 1 {
+				DPrintf("Server %d with seq %d did not receive a majority of prepareOK statements! Retry with different n", px.me, seq)
+				time.Sleep(time.Second)
+				continue
+			}
+			
+			DPrintf("Sucessfully passed the Prepare Stage with seq %d, value %v, highest_n_a %d, and n %d", seq, v_prime, highest_n_a, n)
+
+			accept_oks := 0
+			for idx, peer := range px.peers{
+				args := &AcceptArgs{AcceptNumber: n, AcceptValue: v_prime, Seq: seq}
+				var reply AcceptReply
+				DPrintf("Sending accept message to %d with seq %d with accept number %d", idx, seq, n)
+				if idx == px.me {
+					px.Accept(args, &reply)
+				} else {
+					call(peer, "Paxos.Accept", args, &reply)
+				}
+				if reply.Reply == AcceptOK{
+					DPrintf("Processed a AcceptOK at %d with seq %d", idx, seq)
+					accept_oks++
+				}
+			}
+
+			if accept_oks < len(px.peers)/ 2 + 1 {
+				DPrintf("Server %d with seq %d did not receive a majority of AcceptOK statements! Retry with different n", px.me, seq)
+				time.Sleep(time.Second)
+				continue
+			}
+
+			DPrintf("Sucessfully passed the Accept Stage with seq %d, value %v, and n %d", seq, v_prime,  n)
+			decided = true
+
+			for idx, peer := range px.peers{
+				args := &DecidedArgs{DecidedValue: v_prime, Seq: seq}
+				var reply DecidedReply
+				DPrintf("Sending decided message to %d with seq %d with decided value %v", idx, seq, v_prime)
+				if idx == px.me {
+					px.Decided(args, &reply)
+				} else {
+					call(peer, "Paxos.Decided", args, &reply)
+				}
+			}
+		}
+	}(done)
+}
+
+//
+// the application on this machine is done with
+// all instances <= seq.
+//
+// see the comments for Min() for more explanation.
+//
+func (px *Paxos) Done(seq int) {
+	if seq > px.z_i {
+		px.z_i = seq
+	}
+}
+
+//
+// the application wants to know the
+// highest instance sequence known to
+// this peer.
+//
+func (px *Paxos) Max() int {
+	max_seq := -1
+	for seq, _ := range px.paxos_instances {
+		if seq > max_seq{
+			max_seq = seq
+		}
+	}
+	DPrintf("application has called Max method on %d. Answer is %d ", px.me, max_seq)
+	return max_seq
+}
+
+//
+// Min() should return one more than the minimum among z_i,
+// where z_i is the highest number ever passed
+// to Done() on peer i. A peers z_i is -1 if it has
+// never called Done().
+//
+// Paxos is required to have forgotten all information
+// about any instances it knows that are < Min().
+// The point is to free up memory in long-running
+// Paxos-based servers.
+//
+// Paxos peers need to exchange their highest Done()
+// arguments in order to implement Min(). These
+// exchanges can be piggybacked on ordinary Paxos
+// agreement protocol messages, so it is OK if one
+// peers Min does not reflect another Peers Done()
+// until after the next instance is agreed to.
+//
+// The fact that Min() is defined as a minimum over
+// *all* Paxos peers means that Min() cannot increase until
+// all peers have been heard from. So if a peer is dead
+// or unreachable, other peers Min()s will not increase
+// even if all reachable peers call Done. The reason for
+// this is that when the unreachable peer comes back to
+// life, it will need to catch up on instances that it
+// missed -- the other peers therefor cannot forget these
+// instances.
+// 
+func (px *Paxos) Min() int {
+	DPrintf("application has called Min method on %d . Answer is %d", px.me, px.z_i + 1)
+	return px.z_i + 1
+}
+
+//
+// the application wants to know whether this
+// peer thinks an instance has been decided,
+// and if so what the agreed value is. Status()
+// should just inspect the local peer state;
+// it should not contact other Paxos peers.
+//
+func (px *Paxos) Status(seq int) (bool, interface{}) {
+	_, exists := px.paxos_instances[seq]
+	if ! exists{
+		DPrintf("application has called Status method on %d with seq %d. Answer is %v %t", px.me, seq, nil, false)
+		return false, nil
+	}
+	value := px.paxos_instances[seq].v_decided
+	exists = value != nil
+	DPrintf("application has called Status method on %d with seq %d. Answer is %v %t", px.me, seq, value, exists)
+	return exists, value
 }
 
 //
@@ -79,84 +361,6 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 	return false
 }
 
-
-//
-// the application wants paxos to start agreement on
-// instance seq, with proposed value v.
-// Start() returns right away; the application will
-// call Status() to find out if/when agreement
-// is reached.
-//
-func (px *Paxos) Start(seq int, v interface{}) {
-	// Your code here.
-}
-
-//
-// the application on this machine is done with
-// all instances <= seq.
-//
-// see the comments for Min() for more explanation.
-//
-func (px *Paxos) Done(seq int) {
-	// Your code here.
-}
-
-//
-// the application wants to know the
-// highest instance sequence known to
-// this peer.
-//
-func (px *Paxos) Max() int {
-	// Your code here.
-	return 0
-}
-
-//
-// Min() should return one more than the minimum among z_i,
-// where z_i is the highest number ever passed
-// to Done() on peer i. A peers z_i is -1 if it has
-// never called Done().
-//
-// Paxos is required to have forgotten all information
-// about any instances it knows that are < Min().
-// The point is to free up memory in long-running
-// Paxos-based servers.
-//
-// Paxos peers need to exchange their highest Done()
-// arguments in order to implement Min(). These
-// exchanges can be piggybacked on ordinary Paxos
-// agreement protocol messages, so it is OK if one
-// peers Min does not reflect another Peers Done()
-// until after the next instance is agreed to.
-//
-// The fact that Min() is defined as a minimum over
-// *all* Paxos peers means that Min() cannot increase until
-// all peers have been heard from. So if a peer is dead
-// or unreachable, other peers Min()s will not increase
-// even if all reachable peers call Done. The reason for
-// this is that when the unreachable peer comes back to
-// life, it will need to catch up on instances that it
-// missed -- the other peers therefor cannot forget these
-// instances.
-// 
-func (px *Paxos) Min() int {
-	// You code here.
-	return 0
-}
-
-//
-// the application wants to know whether this
-// peer thinks an instance has been decided,
-// and if so what the agreed value is. Status()
-// should just inspect the local peer state;
-// it should not contact other Paxos peers.
-//
-func (px *Paxos) Status(seq int) (bool, interface{}) {
-	// Your code here.
-	return false, nil
-}
-
-
 //
 // tell the peer to shut itself down.
 // for testing.
@@ -169,18 +373,30 @@ func (px *Paxos) Kill() {
 	}
 }
 
+// make a paxos instance with a sequence number
+func (px *Paxos) makePaxosInstance(seq int){
+	DPrintf("Making a new paxos instance for peer %d with seq %d", px.me, seq)
+	pxi := &PaxosInstance{}
+	pxi.n_p, pxi.n_a, pxi.v_a, pxi.v_decided = 0, 0, nil, nil
+
+	px.paxos_instances[seq] = pxi
+}
+
 //
 // the application wants to create a paxos peer.
 // the ports of all the paxos peers (including this one)
 // are in peers[]. this servers port is peers[me].
 //
 func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
+	DPrintf("Make method called. I am %d with peers %s", me, peers)
 	px := &Paxos{}
 	px.peers = peers
 	px.me = me
-
+	px.z_i = -1
 
 	// Your initialization code here.
+	px.paxos_instances = make(map[int] *PaxosInstance)
+	
 
 	if rpcs != nil {
 		// caller will create socket &c

@@ -6,10 +6,12 @@ import "fmt"
 // import "reflect"
 // import "time"
 
+
 func main() {
-	var a int64
-	a = 6
-	fmt.Printf("var a is %d", a)
+	mapper := make(map[int]string)
+	val, exists := mapper[0]
+	fmt.Println(val, exists)
+	
 
 
 }

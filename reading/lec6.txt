@@ -1,0 +1,3 @@
+I like how go tries to combine the speed and low level control of C/C++, but the syntax is simpler and w/o the mem management. I also like goroutines and channels.
+
+I would change silly compile errors such as: unused import, unused variable, or at least allow for such compilations in a different compliation mode.
