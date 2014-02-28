@@ -182,6 +182,10 @@ func (px *Paxos) Start(seq int, v interface{}) {
 	DPrintf("Start method called! seq: %d, proposed value: %s", seq, v)
 	DPrintf("I am %d of my peers: %s", px.me, px.peers)
 
+	if seq < px.Min() {
+		return
+	}
+
 	_, exists := px.paxos_instances[seq]
 	if ! exists{
 		DPrintf("Start method called, but paxos instance already exists! seq: %d, proposed value: %s", seq, v)
@@ -346,6 +350,9 @@ func (px *Paxos) Min() int {
 // it should not contact other Paxos peers.
 //
 func (px *Paxos) Status(seq int) (bool, interface{}) {
+	if seq < px.Min() {
+		return false, nil
+	}
 	_, exists := px.paxos_instances[seq]
 	if ! exists{
 		DPrintf("application has called Status method on %d with seq %d. Answer is %v %t", px.me, seq, nil, false)
