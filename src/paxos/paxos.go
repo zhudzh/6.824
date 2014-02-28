@@ -82,7 +82,7 @@ type DecidedArgs struct {
 type DecidedReply struct {
 }
 
-
+// One instance of paxos
 type PaxosInstance struct{
 	seq int
 	n_p, n_a int
@@ -90,6 +90,7 @@ type PaxosInstance struct{
 
 }
 
+// One Paxos server
 type Paxos struct {
 	mu sync.Mutex
 	l net.Listener
@@ -104,11 +105,12 @@ type Paxos struct {
 	done_array []int
 }
 
-
+// Generate a proposal number for paxos instance
 func (px *Paxos) generateN() int {
 	return (int(time.Now().Unix()) << 8) + px.me
 }
 
+// Handle a prepare message
 func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 	DPrintf("received a prepare message! at %d for seq %d", px.me, args.Seq)
 	_, exists := px.paxos_instances[args.Seq]
@@ -128,6 +130,7 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 	return nil
 }
 
+// Handle an accept message
 func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	DPrintf("received an accept message! at %d for seq %d", px.me, args.Seq)
 	_, exists := px.paxos_instances[args.Seq]
@@ -147,6 +150,7 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	return nil
 }
 
+// handle a decided message
 func (px *Paxos) Decided(args *DecidedArgs, reply *DecidedReply) error{
 	DPrintf("received an decided message! at %d for seq %d", px.me, args.Seq)
 	_, exists := px.paxos_instances[args.Seq]
@@ -157,7 +161,8 @@ func (px *Paxos) Decided(args *DecidedArgs, reply *DecidedReply) error{
 	return nil
 }
 
-func (px *Paxos) handleDone(min_seq int){
+// relase memory for sequence numbers < min_seq
+func (px *Paxos) releaseMemory(min_seq int){
 	for seq, _ := range px.paxos_instances {
 		if seq < min_seq {
 			delete(px.paxos_instances, seq)
@@ -184,7 +189,6 @@ func (px *Paxos) Start(seq int, v interface{}) {
 	}
 
 	done, _ := px.Status(seq)
-
 
 	go func(decided bool) {
 		for ! decided {
@@ -330,7 +334,7 @@ func (px *Paxos) Min() int {
 		}
 	}
 	DPrintf("application has called Min method on %d . Array is %v, Answer is %d", px.me, px.done_array, min_zi + 1)
-	px.handleDone(min_zi)
+	px.releaseMemory(min_zi)
 	return min_zi + 1
 }
 
