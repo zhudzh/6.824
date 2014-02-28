@@ -32,7 +32,7 @@ import "time"
 // import "reflect"
 
 // Debugging
-const Debug = 1
+const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -59,6 +59,7 @@ type PrepareReply struct {
 	HighestNumberAccepted int
 	ValueAccepted interface{}
 	Reply Reply
+	MyDone int
 }
 
 type AcceptArgs struct {
@@ -70,6 +71,7 @@ type AcceptArgs struct {
 type AcceptReply struct {
 	AcceptNumber int
 	Reply Reply
+	MyDone int
 }
 
 type DecidedArgs struct {
@@ -99,8 +101,9 @@ type Paxos struct {
 
 	// Your data here.
 	paxos_instances map[int] *PaxosInstance
-	z_i int
+	done_array []int
 }
+
 
 func (px *Paxos) generateN() int {
 	return (int(time.Now().Unix()) << 8) + px.me
@@ -120,6 +123,7 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 	} else {
 		reply.Reply = PrepareReject
 	}
+	reply.MyDone = px.myDone()
 	DPrintf("reply of server %d for seq %d is %s", px.me, args.Seq, reply.Reply)
 	return nil
 }
@@ -138,6 +142,7 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	} else {
 		reply.Reply = AcceptReject
 	}
+	reply.MyDone = px.myDone()
 	DPrintf("reply of server %d for seq %d is %s", px.me, args.Seq, reply.Reply)
 	return nil
 }
@@ -152,6 +157,14 @@ func (px *Paxos) Decided(args *DecidedArgs, reply *DecidedReply) error{
 	return nil
 }
 
+func (px *Paxos) handleDone(min_seq int){
+	for seq, _ := range px.paxos_instances {
+		if seq < min_seq {
+			delete(px.paxos_instances, seq)
+		}
+	}
+
+}
 
 //
 // the application wants paxos to start agreement on
@@ -197,6 +210,7 @@ func (px *Paxos) Start(seq int, v interface{}) {
 						v_prime = reply.ValueAccepted
 					}
 				}
+				px.done_array[idx] = reply.MyDone
 			}
 			if prepare_oks < len(px.peers)/ 2 + 1 {
 				DPrintf("Server %d with seq %d did not receive a majority of prepareOK statements! Retry with different n", px.me, seq)
@@ -220,6 +234,7 @@ func (px *Paxos) Start(seq int, v interface{}) {
 					DPrintf("Processed a AcceptOK at %d with seq %d", idx, seq)
 					accept_oks++
 				}
+				px.done_array[idx] = reply.MyDone
 			}
 
 			if accept_oks < len(px.peers)/ 2 + 1 {
@@ -252,8 +267,9 @@ func (px *Paxos) Start(seq int, v interface{}) {
 // see the comments for Min() for more explanation.
 //
 func (px *Paxos) Done(seq int) {
-	if seq > px.z_i {
-		px.z_i = seq
+	DPrintf("application has called Done method on %d with seq %d ", px.me, seq)
+	if seq > px.done_array[px.me] {
+		px.done_array[px.me] = seq
 	}
 }
 
@@ -271,6 +287,11 @@ func (px *Paxos) Max() int {
 	}
 	DPrintf("application has called Max method on %d. Answer is %d ", px.me, max_seq)
 	return max_seq
+}
+
+//returns the paxos's instance highest done seq number
+func (px *Paxos) myDone() int{
+	return px.done_array[px.me]
 }
 
 //
@@ -302,8 +323,15 @@ func (px *Paxos) Max() int {
 // instances.
 // 
 func (px *Paxos) Min() int {
-	DPrintf("application has called Min method on %d . Answer is %d", px.me, px.z_i + 1)
-	return px.z_i + 1
+	min_zi := 2147483647 // max int32
+	for _, z_i := range px.done_array {
+		if z_i < min_zi{
+			min_zi = z_i
+		}
+	}
+	DPrintf("application has called Min method on %d . Array is %v, Answer is %d", px.me, px.done_array, min_zi + 1)
+	px.handleDone(min_zi)
+	return min_zi + 1
 }
 
 //
@@ -392,7 +420,10 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 	px := &Paxos{}
 	px.peers = peers
 	px.me = me
-	px.z_i = -1
+	px.done_array = make([]int, len(peers))
+	for idx := range px.done_array{
+		px.done_array[idx] = -1
+	}
 
 	// Your initialization code here.
 	px.paxos_instances = make(map[int] *PaxosInstance)

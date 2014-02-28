@@ -5,13 +5,18 @@ import "fmt"
 // import "strconv"
 // import "reflect"
 // import "time"
+import "sort"
 
 
 func main() {
-	mapper := make(map[int]string)
-	val, exists := mapper[0]
-	fmt.Println(val, exists)
-	
+
+	arr := make([]int, 2)
+	for idx := range arr{
+		arr[idx] = -1
+	}
+	sort.Ints(arr)
+	fmt.Println(arr)
+
 
 
 }
