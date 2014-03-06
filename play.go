@@ -5,11 +5,18 @@ import "fmt"
 // import "strconv"
 // import "reflect"
 // import "time"
+import "sort"
+
 
 func main() {
-	var a int64
-	a = 6
-	fmt.Printf("var a is %d", a)
+
+	arr := make([]int, 2)
+	for idx := range arr{
+		arr[idx] = -1
+	}
+	sort.Ints(arr)
+	fmt.Println(arr)
+
 
 
 }
