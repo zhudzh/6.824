@@ -1,0 +1,8 @@
+Suppose that the acceptors are A, B, and C. A and B are also proposers. How does Paxos ensure that the following sequence of events can't happen? What actually happens, and which value is ultimately chosen?
+
+A sends prepare requests with proposal number 1, and gets responses from A, B, and C.
+A sends accept(1, "foo") to A and C and gets responses from both. Because a majority accepted, A thinks that "foo" has been chosen. However, A crashes before sending an accept to B.
+B sends prepare messages with proposal number 2, and gets responses from B and C.
+B sends accept(2, "bar") messages to B and C and gets responses from both, so B thinks that "bar" has been chosen.
+
+B must choose "foo" as its value for proposal number 2. This is because it is the value of the highest proposal number it received as a response to its prepare request, which it received from C.

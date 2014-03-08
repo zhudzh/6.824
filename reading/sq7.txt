@@ -1,0 +1,1 @@
+I didn't understand how using loosely synchronized clocks made it unlikely to loose external consistancy of the file system.

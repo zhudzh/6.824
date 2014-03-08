@@ -1,0 +1,7 @@
+When will an EPaxos replica R execute a particular command C? Think about when commands are committed, command interference, read operations, etc.
+
+replica R will execute a command C:
+after C has been committed.
+It could happen when C is the the command to be executed, or when C is in the dependancy graph of another command to be executed.
+
+These only happens on reads, which are no-ops that interfere with the update commands for the same object.

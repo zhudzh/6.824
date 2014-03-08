@@ -1,0 +1,1 @@
+I think I understand Paxos, but I don't understand the state machine application exactly. Each command is a new 'value' from the leader, so the agreed upon value is always changing?

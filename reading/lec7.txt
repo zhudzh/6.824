@@ -1,0 +1,1 @@
+Harp is faster because they don't actually write operations to disk at first- they simply put them in memory and use a log to queue disk operations
