@@ -1,0 +1,3 @@
+Overall, the design looks good. One thing that could make your code slightly simpler, would be to not update as much state (primary, amiPrimary, amIsecondary etc.) For example, in your pbservice client, you did extra work to update the view- you could of simply called ck.vs.Primary() etc. each time and not kept that state up to date.
+
+Good job.
