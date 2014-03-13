@@ -10,21 +10,36 @@ import "os"
 import "syscall"
 import "encoding/gob"
 import "math/rand"
+import "time"
+import "strconv"
+// import "reflect"
 
-const Debug=0
+
+const Debug=1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
   if Debug > 0 {
-    log.Printf(format, a...)
+    n, err = fmt.Printf(format + "\n", a...)
   }
   return
 }
 
+const (
+  Get = "Get"
+  Put = "Put"
+  Noop = "Noop"
+)
 
 type Op struct {
   // Your definitions here.
   // Field names must start with capital letters,
   // otherwise RPC will break.
+  Type string
+  GetArgs *GetArgs
+  GetReply *GetReply
+  PutArgs *PutArgs  
+  PutReply *PutReply
+
 }
 
 type KVPaxos struct {
@@ -36,16 +51,131 @@ type KVPaxos struct {
   px *paxos.Paxos
 
   // Your definitions here.
+  kv map[string]string
+  min_seq int // smallest op seq number which has been already applied
 }
 
 
+func (kv *KVPaxos) getOpConensus(op Op, seq_num int) bool{
+  kv.px.Start(seq_num, op)
+  var op_rcv interface{}
+  var decided bool
+
+  to := 10 * time.Millisecond
+  for {
+    decided, op_rcv = kv.px.Status(seq_num)
+    if decided {
+      break 
+    }
+    time.Sleep(to)
+    if to < 10 * time.Second {
+      to *= 2
+    }
+  }
+  DPrintf("server %d got paxos consensus for op %#v for seq %d. Op is same?: %t", kv.me, op_rcv, seq_num, op_rcv == op)
+
+  return op_rcv == op
+}
+
+func (kv *KVPaxos) fillHoles(start int, end int) {
+  DPrintf("server %d trying to fill holes from [%d to %d)", kv.me, start, end)
+  for seq := start; seq < end; seq++ {
+    decided, _ := kv.px.Status(seq)
+    if ! decided {
+      kv.getOpConensus(Op{Type: Noop}, seq)
+      DPrintf("Hole was not filled! Try again")
+    }
+  }
+  DPrintf("server %d has filled holes from [%d to %d)!", kv.me, start, end)
+}
+
+func (kv *KVPaxos) applyOps(start int, end int) {
+  DPrintf("server %d trying to apply ops from [%d to %d)", kv.me, start, end)
+  for seq := start; seq < end; seq++ {
+    decided, op := kv.px.Status(seq)
+    if ! decided {
+      DPrintf("WE have a problem!!!! seq %d was never decided!", seq)
+    } else {
+      DPrintf("Server %d Applying op %#v for seq %d", kv.me, op, seq)
+      kv.performOp(op.(Op))     
+    }
+  }
+  DPrintf("server %d has applied ops from [%d to %d)!", kv.me, start, end)
+  DPrintf("server %d kv is %v", kv.me, kv.kv)
+  kv.min_seq = end - 1
+  kv.px.Done(kv.min_seq)
+
+}
+
+func (kv *KVPaxos) performOp(op Op) {
+  switch op.Type{
+    case Get:
+      kv.performGet(op)
+    case Put:
+      kv.performPut(op)
+    case Noop:
+      DPrintf("Server %d Applying Noop operation", kv.me)
+  }
+}
+
+func (kv *KVPaxos) putOpInLog(op Op){
+  next_instance := kv.px.Max()
+  performed := false
+  for ! performed{
+    next_instance++
+    performed = kv.getOpConensus(op, next_instance)
+    DPrintf("Op was not performed! Try again")
+  }
+  kv.fillHoles(kv.min_seq + 1, next_instance + 1)
+  kv.applyOps(kv.min_seq + 1, next_instance + 1)
+}
+
+func (kv *KVPaxos) performGet(op Op){
+  DPrintf("Server %d Applying Get operation", kv.me)
+  op.GetReply.Value = kv.kv[op.GetArgs.Key]
+  op.GetReply.Err = OK
+  DPrintf("get is %s", op.GetReply.Value)
+  // time.Sleep(1 * time.Second)
+  //update state to reflect the put has been done and the value it should be
+}
+
+func (kv *KVPaxos) performPut(op Op) {
+  DPrintf("Server %d Applying Put operation", kv.me)
+  if op.PutArgs.DoHash{
+      prev_val, exists := kv.kv[op.PutArgs.Key]
+      if exists == false {
+        prev_val = ""
+      }
+      op.PutArgs.Value = strconv.Itoa(int(hash(prev_val + op.PutArgs.Value))) // new value is the hash of the prev_val and value
+      op.PutReply.PreviousValue = prev_val
+    }
+    kv.kv[op.PutArgs.Key] = op.PutArgs.Value
+    op.PutReply.Err = OK
+    //update state to reflect the put has been done and the value it should be
+}
+
+// Get RPC handler, primary handles get request from client
 func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
-  // Your code here.
+  kv.mu.Lock()
+  defer kv.mu.Unlock()
+
+  DPrintf("server %d received get request!", kv.me)
+  op := Op{Type: Get, GetArgs: args, GetReply: reply}
+  kv.putOpInLog(op)
+
+
   return nil
 }
 
+// Put RPC handler, primary handles put request from client
 func (kv *KVPaxos) Put(args *PutArgs, reply *PutReply) error {
-  // Your code here.
+  kv.mu.Lock()
+  defer kv.mu.Unlock()
+
+  DPrintf("server %d received put request %v -> %v! DoHash? %t. Client Seq #: %d", kv.me, args.Key, args.Value, args.DoHash, args.SeqNum)
+  op := Op{Type: Put, PutArgs: args, PutReply: reply}
+  kv.putOpInLog(op)
+  
 
   return nil
 }
@@ -74,6 +204,8 @@ func StartServer(servers []string, me int) *KVPaxos {
   kv.me = me
 
   // Your initialization code here.
+  kv.kv = make(map[string]string)
+  kv.min_seq = -1
 
   rpcs := rpc.NewServer()
   rpcs.Register(kv)
