@@ -103,7 +103,6 @@ type Paxos struct {
 	// Your data here.
 	paxos_instances map[int] *PaxosInstance
 	done_array []int
-	server_mu sync.Mutex
 }
 
 // Generate a proposal number for paxos instance
@@ -113,8 +112,8 @@ func (px *Paxos) generateN() int {
 
 // Handle a prepare message
 func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
-	px.server_mu.Lock()
-	defer px.server_mu.Unlock()
+	px.mu.Lock()
+	defer px.mu.Unlock()
 
 	DPrintf("received a prepare message! at %d for seq %d", px.me, args.Seq)
 	_, exists := px.paxos_instances[args.Seq]
@@ -136,8 +135,8 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 
 // Handle an accept message
 func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
-	px.server_mu.Lock()
-	defer px.server_mu.Unlock()
+	px.mu.Lock()
+	defer px.mu.Unlock()
 
 	DPrintf("received an accept message! at %d for seq %d", px.me, args.Seq)
 	_, exists := px.paxos_instances[args.Seq]
@@ -159,8 +158,8 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 
 // handle a decided message
 func (px *Paxos) Decided(args *DecidedArgs, reply *DecidedReply) error{
-	px.server_mu.Lock()
-	defer px.server_mu.Unlock()
+	px.mu.Lock()
+	defer px.mu.Unlock()
 
 	DPrintf("received an decided message! at %d for seq %d", px.me, args.Seq)
 	_, exists := px.paxos_instances[args.Seq]
@@ -173,6 +172,9 @@ func (px *Paxos) Decided(args *DecidedArgs, reply *DecidedReply) error{
 
 // release memory for sequence numbers < min_seq
 func (px *Paxos) releaseMemory(min_seq int){
+	px.mu.Lock()
+	defer px.mu.Unlock()
+
 	for seq, _ := range px.paxos_instances {
 		if seq < min_seq {
 			delete(px.paxos_instances, seq)
@@ -189,21 +191,8 @@ func (px *Paxos) releaseMemory(min_seq int){
 // is reached.
 //
 func (px *Paxos) Start(seq int, v interface{}) {
-	px.mu.Lock()
-	defer px.mu.Unlock()
-
 	DPrintf("Start method called! seq: %d, proposed value: %s", seq, v)
 	DPrintf("I am %d of my peers: %s", px.me, px.peers)
-
-	if seq < px.Min() {
-		return
-	}
-
-	_, exists := px.paxos_instances[seq]
-	if ! exists{
-		DPrintf("Start method called, and paxos instance doesn't already exists! seq: %d, proposed value: %s", seq, v)
-		px.makePaxosInstance(seq)
-	}
 
 	done, _ := px.Status(seq)
 
@@ -288,8 +277,8 @@ func (px *Paxos) Start(seq int, v interface{}) {
 // see the comments for Min() for more explanation.
 //
 func (px *Paxos) Done(seq int) {
-	px.mu.Lock()
-	defer px.mu.Unlock()
+	// px.mu.Lock()
+	// defer px.mu.Unlock()
 
 	DPrintf("application has called Done method on %d with seq %d ", px.me, seq)
 	if seq > px.done_array[px.me] {
@@ -372,6 +361,10 @@ func (px *Paxos) Status(seq int) (bool, interface{}) {
 	if seq < px.Min() {
 		return false, nil
 	}
+	
+	px.mu.Lock()
+	defer px.mu.Unlock()
+
 	_, exists := px.paxos_instances[seq]
 	if ! exists{
 		DPrintf("application has called Status method on %d with seq %d. Answer is %v %t", px.me, seq, nil, false)

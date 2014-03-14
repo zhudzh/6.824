@@ -57,6 +57,7 @@ type KVPaxos struct {
 
 
 func (kv *KVPaxos) getOpConensus(op Op, seq_num int) bool{
+  DPrintf("server %d trying to get consenus for %d with possible op %#v", kv.me, seq_num, op)
   kv.px.Start(seq_num, op)
   var op_rcv interface{}
   var decided bool
@@ -67,12 +68,13 @@ func (kv *KVPaxos) getOpConensus(op Op, seq_num int) bool{
     if decided {
       break 
     }
+    DPrintf("server %d trying to get consenus for %d with possible op %#v. Op is not decided, wait and try again!", kv.me, seq_num, op)
     time.Sleep(to)
     if to < 10 * time.Second {
       to *= 2
     }
   }
-  DPrintf("server %d got paxos consensus for op %#v for seq %d. Op is same?: %t", kv.me, op_rcv, seq_num, op_rcv == op)
+  DPrintf("server %d got paxos consensus for # %d for op %#v Op is same?: %t", kv.me, seq_num, op_rcv,  op_rcv == op)
 
   return op_rcv == op
 }
@@ -82,8 +84,8 @@ func (kv *KVPaxos) fillHoles(start int, end int) {
   for seq := start; seq < end; seq++ {
     decided, _ := kv.px.Status(seq)
     if ! decided {
-      kv.getOpConensus(Op{Type: Noop}, seq)
-      DPrintf("Hole was not filled! Try again")
+      DPrintf("Server %d is requesting a noop for # %d because there is a hole!", kv.me, seq)
+      kv.getOpConensus(Op{Type: Noop}, seq)      
     }
   }
   DPrintf("server %d has filled holes from [%d to %d)!", kv.me, start, end)
@@ -96,13 +98,14 @@ func (kv *KVPaxos) applyOps(start int, end int) {
     if ! decided {
       DPrintf("WE have a problem!!!! seq %d was never decided!", seq)
     } else {
-      DPrintf("Server %d Applying op %#v for seq %d", kv.me, op, seq)
+      DPrintf("Server %d Applying op %d: %#v ", kv.me,seq, op)
       kv.performOp(op.(Op))     
     }
   }
-  DPrintf("server %d has applied ops from [%d to %d)!", kv.me, start, end)
-  DPrintf("server %d kv is %v", kv.me, kv.kv)
   kv.min_seq = end - 1
+  DPrintf("server %d has applied ops from [%d to %d)! Has now applied ops up to %d", kv.me, start, end, kv.min_seq)
+  DPrintf("server %d kv is %v", kv.me, kv.kv)
+  
   kv.px.Done(kv.min_seq)
 
 }
@@ -118,24 +121,27 @@ func (kv *KVPaxos) performOp(op Op) {
   }
 }
 
-func (kv *KVPaxos) putOpInLog(op Op){
-  next_instance := kv.px.Max()
-  performed := false
+func (kv *KVPaxos) putOpInLog(op Op) int{
+  attempted_instance := kv.px.Max() + 1
+  DPrintf("Server %d Op %#v is trying with seq %d", kv.me, op, attempted_instance)
+  performed := kv.getOpConensus(op, attempted_instance)
   for ! performed{
-    next_instance++
-    performed = kv.getOpConensus(op, next_instance)
-    DPrintf("Op was not performed! Try again")
+    attempted_instance++
+    DPrintf("Server %d Op %#v was not performed! is trying again with seq %d", kv.me, op, attempted_instance)    
+    performed = kv.getOpConensus(op, attempted_instance)
+    
   }
-  kv.fillHoles(kv.min_seq + 1, next_instance + 1)
-  kv.applyOps(kv.min_seq + 1, next_instance + 1)
+  kv.fillHoles(kv.min_seq + 1, attempted_instance + 1)
+  kv.applyOps(kv.min_seq + 1, attempted_instance + 1)
+
+  return attempted_instance
 }
 
 func (kv *KVPaxos) performGet(op Op){
   DPrintf("Server %d Applying Get operation", kv.me)
   op.GetReply.Value = kv.kv[op.GetArgs.Key]
   op.GetReply.Err = OK
-  DPrintf("get is %s", op.GetReply.Value)
-  // time.Sleep(1 * time.Second)
+  // DPrintf("get is %s", op.GetReply.Value)
   //update state to reflect the put has been done and the value it should be
 }
 
@@ -161,9 +167,9 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 
   DPrintf("server %d received get request!", kv.me)
   op := Op{Type: Get, GetArgs: args, GetReply: reply}
-  kv.putOpInLog(op)
+  instance_num := kv.putOpInLog(op)
 
-
+  DPrintf("server %d finished get request %d, %#v!", kv.me, instance_num, op)
   return nil
 }
 
@@ -174,9 +180,9 @@ func (kv *KVPaxos) Put(args *PutArgs, reply *PutReply) error {
 
   DPrintf("server %d received put request %v -> %v! DoHash? %t. Client Seq #: %d", kv.me, args.Key, args.Value, args.DoHash, args.SeqNum)
   op := Op{Type: Put, PutArgs: args, PutReply: reply}
-  kv.putOpInLog(op)
+  instance_num := kv.putOpInLog(op)
   
-
+  DPrintf("server %d finished put request %d, %#v!", kv.me, instance_num, op)
   return nil
 }
 
