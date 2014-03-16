@@ -107,7 +107,7 @@ type Paxos struct {
 
 // Generate a proposal number for paxos instance
 func (px *Paxos) generateN() int {
-	return (int(time.Now().Unix()) << 8) + px.me
+	return int(time.Now().UnixNano())*len(px.peers)+ px.me
 }
 
 // Handle a prepare message

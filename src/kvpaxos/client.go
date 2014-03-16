@@ -2,8 +2,10 @@ package kvpaxos
 
 import "net/rpc"
 import "fmt"
-import "crypto/rand"
+import crrand "crypto/rand"
 import "math/big"
+import "time"
+import "math/rand"
 
 type Clerk struct {
   servers []string
@@ -24,7 +26,7 @@ func MakeClerk(servers []string) *Clerk {
 
 func nrand() int64 {
   max := big.NewInt(int64(1) << 62)
-  bigx, _ := rand.Int(rand.Reader, max)
+  bigx, _ := crrand.Int(crrand.Reader, max)
   x := bigx.Int64()
   return x
 }
@@ -61,6 +63,7 @@ func call(srv string, rpcname string,
   return false
 }
 
+
 //
 // fetch the current value for a key.
 // returns "" if the key does not exist.
@@ -68,11 +71,25 @@ func call(srv string, rpcname string,
 //
 func (ck *Clerk) Get(key string) string {
   ck.seq_num++
-  DPrintf("client %d sends get request with key %s", ck.seq_num, key)
+  DPrintf("client %d, seq %d sends get request with key %s", ck.id, ck.seq_num, key)
   args := &GetArgs{Key: key, SeqNum:ck.seq_num, ClientID: ck.id}
   var reply GetReply
-  ok := call(ck.servers[0], "KVPaxos.Get", args, &reply)
+
+  to := 10 * time.Millisecond
+  server := rand.Int() % len(ck.servers)
+
+  ok := call(ck.servers[server], "KVPaxos.Get", args, &reply)
+  DPrintf("client %d, seq %d received from server %d get reply! OK: %t reply: %#v",ck.id, ck.seq_num, server, ok, reply)
   for ok == false || reply.Err != OK  {
+    DPrintf("client %d, seq %d received from server %d failed get reply! OK: %t reply: %#v",ck.id, ck.seq_num, server, ok, reply)
+    time.Sleep(to)
+    if to < 10 * time.Second {
+      to *= 2
+    }
+    server = (server + 1) % len(ck.servers)
+    DPrintf("client %d, seq %d trying again with server %d", ck.id, ck.seq_num, server)
+    ok = call(ck.servers[server], "KVPaxos.Get", args, &reply)
+    
   }
   return reply.Value
 }
@@ -83,11 +100,25 @@ func (ck *Clerk) Get(key string) string {
 //
 func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
   ck.seq_num++
-  DPrintf("client %d sends put request with key %s, value %s, dohash %t",ck.seq_num, key, value, dohash)
+  DPrintf("client %d, seq %d sends put request with key %s, value %s, dohash %t",ck.id, ck.seq_num, key, value, dohash)
   args := &PutArgs{Key: key, Value: value, DoHash: dohash, SeqNum:ck.seq_num, ClientID: ck.id}
   var reply PutReply
-  ok := call(ck.servers[0], "KVPaxos.Put", args, &reply)
+
+  to := 10 * time.Millisecond
+  server := rand.Int() % len(ck.servers)
+
+  ok := call(ck.servers[server], "KVPaxos.Put", args, &reply)
+  DPrintf("client %d, seq %d received from server %d put reply! OK: %t reply: %#v",ck.id, ck.seq_num, server, ok, reply)
   for ok == false || reply.Err != OK  {
+    DPrintf("client %d, seq %d received from server %d failed put reply! OK: %t reply: %#v",ck.id, ck.seq_num, server, ok, reply)
+    time.Sleep(to)
+    if to < 10 * time.Second {
+      to *= 2
+    }
+    server = (server + 1) % len(ck.servers)
+    DPrintf("client %d, seq %d trying again with server %d", ck.id, ck.seq_num, server)
+    ok = call(ck.servers[server], "KVPaxos.Put", args, &reply)
+    
   }
   return reply.PreviousValue
 }

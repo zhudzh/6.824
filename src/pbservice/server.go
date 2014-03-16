@@ -170,9 +170,6 @@ func (pb *PBServer) GetUpdateRequest(key string, value string, client_id int64, 
 
 // ping the viewserver periodically.
 func (pb *PBServer) tick() {
-	// pb.mu.Lock()
-	// defer pb.mu.Unlock()
-
 	DPrintf("%s Pinging VS with viewnum: %d", pb.me, pb.myview.Viewnum)
 	View, error := pb.vs.Ping(pb.myview.Viewnum)
 	if error != nil{

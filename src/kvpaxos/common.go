@@ -8,6 +8,12 @@ const (
 )
 type Err string
 
+const (
+  Get = "Get"
+  Put = "Put"
+  Noop = "Noop"
+)
+
 type PutArgs struct {
   Key string
   Value string
