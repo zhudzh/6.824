@@ -149,7 +149,7 @@ func (kv *KVPaxos) applyOps() {
     case max_seq := <- kv.request_noop_channel:
       for seq_start := seq; seq_start < max_seq; seq_start++{
         DPrintf("Server %d Proposing noop for paxos instance: %d", kv.me, seq_start)
-        kv.getOpConensus( &Op{Type: Noop}, seq_start)
+        kv.px.Start(seq_start, &Op{Type: Noop})
       }  
 
     default:
@@ -193,9 +193,8 @@ func (kv *KVPaxos) putOpInLog(op *Op) int{
     time.Sleep(750 * time.Millisecond)
     _, handled = kv.sequenceHandled(op.ClientID, op.SeqNum)
   }
-
-  kv.px.Done(attempted_instance -1)
   
+  kv.px.Done(attempted_instance -1)
   DPrintf("Server %d has handled op for first time from client %d, seq num %d Paxos seq %d!", kv.me, op.ClientID, op.SeqNum, op.PaxosSeq)
   return attempted_instance
 }
