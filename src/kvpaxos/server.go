@@ -165,10 +165,9 @@ func (kv *KVPaxos) applyOps() {
       if decided {
         DPrintf("Server %d Applying op %d: %#v ", kv.me,seq, op)
         kv.performOp(op, seq)
-        // kv.px.Done(seq)
         seq++
       } else {          
-        time.Sleep(3 * time.Millisecond)
+        time.Sleep(5 * time.Millisecond)
       }
     }    
   }
@@ -190,19 +189,19 @@ func (kv *KVPaxos) putOpInLog(op *Op) int{
   _, handled := kv.sequenceHandled(op.ClientID, op.SeqNum)
   for ! handled{
     kv.request_noop_channel <- attempted_instance
-    time.Sleep(750 * time.Millisecond)
+    time.Sleep(500 * time.Millisecond)
     _, handled = kv.sequenceHandled(op.ClientID, op.SeqNum)
   }
   
-  kv.px.Done(attempted_instance -1)
+  kv.px.Done(attempted_instance)
   DPrintf("Server %d has handled op for first time from client %d, seq num %d Paxos seq %d!", kv.me, op.ClientID, op.SeqNum, op.PaxosSeq)
   return attempted_instance
 }
 
 // Get RPC handler, primary handles get request from client
 func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
-  // kv.mu.Lock()
-  // defer kv.mu.Unlock()
+  kv.mu.Lock()
+  defer kv.mu.Unlock()
 
   handled_op, handled := kv.sequenceHandled(args.ClientID, args.SeqNum)
 
@@ -229,8 +228,8 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 
 // Put RPC handler, primary handles put request from client
 func (kv *KVPaxos) Put(args *PutArgs, reply *PutReply) error {
-  // kv.mu.Lock()
-  // defer kv.mu.Unlock()
+  kv.mu.Lock()
+  defer kv.mu.Unlock()
 
   handled_op, handled := kv.sequenceHandled(args.ClientID, args.SeqNum)
 

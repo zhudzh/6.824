@@ -176,7 +176,7 @@ func (px *Paxos) releaseMemory(min_seq int){
 	defer px.mu.Unlock()
 
 	for seq, _ := range px.paxos_instances {
-		if seq < min_seq {
+		if seq <= min_seq {
 			delete(px.paxos_instances, seq)
 		}
 	}
