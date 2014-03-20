@@ -1,0 +1,1 @@
+How does 'distributed memory' look like/work today? I thought that most memory is virtual, and is not distributed, but that is just my impression.
