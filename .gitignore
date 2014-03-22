@@ -2,3 +2,4 @@ api.key
 *.sublime*
 *handin.tar.gz
 play.go
+my_server.go
