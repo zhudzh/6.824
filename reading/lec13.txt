@@ -1,0 +1,3 @@
+What applications can Spark support well that MapReduce/Hadoop cannot support?
+
+Applications that resuse intermediate results across computations, such as iteratively performing a job (like machine learning iterations). This is because MapReduce forces every map and reduce job to write the results to disk, which takes IO and replication time.
