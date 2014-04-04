@@ -1,0 +1,26 @@
+P2P Messaging and Privacy Groups with Dynamic Paxos
+by Brian Bell, Will Drevo, Forrest Pieper, Colin Taylor
+
+Problem
+
+The first issue is central storage held in the hands of 3rd parties. In the past year, outrage over the NSA’s intrusion into large companies’ data has caused many privacy-conscious users to seek ways to keep their data out of the hands of 3rd party centralized servers which are subject both to subpoena and release by the government and/or hacking from groups by Anonymous. 
+
+The second issue is the lack of privacy controls on online social websites. Many websites and companies are pushing users to share their information with increasingly larger and larger groups. Twitter for example is completely public, and Facebook’s default is that friends of your friends may view your posts. Some social networks like Google Plus allow for custom groups and sharing on a per-post basis, but they are largely unused and/or not flexible enough.
+
+We propose the best of both worlds - a P2P (possibly encrypted) messaging service for which data is held by only by the members of a specified group, but overlaid locally on top of the public-facing view of any website of choice.
+
+Plan
+ 
+We propose to build a Chrome/Facebook-based chat application designed to allow users to share private P2P comments with each other securely. In addition, we plan to support the addition and removal of nodes from the system, allowing users to log in or out dynamically. We will do so using paxos to agree on the ‘view’, which will contain the list of paxos servers. Even with this changing membership, we will be able to guarantee serializable, linearizable messaging among peers. For example, if Friend A mentions posts a Facebook status update that he loves pizza, Friends B, C, D and E could securely converse with each other on how they feel about A’s status, freely logging in or out without influencing the integrity of the chats. Friend A can converse on his own post with B, but obviously won’t be able to see B’s comments to and from C, D and E thanks to the privacy settings.
+
+We plan to first implement the P2P messaging service complete with Dynamic Paxos consensus and failure tolerance / disk persistence so that the core library is built and that anyone can add in their own plugins to their website of choice. 
+
+We believe that it should be easy to add custom content to a website without forfeiting the right to your data and fine tuned privacy controls. 
+
+Design
+
+We propose building a go webserver for each user using our application. We will make all of the data distributed and fault tolerant using paxos. Paxos will be run on top of the server, and clients (the browser/application) will communicate to the server through http. In order to handle clients leaving and entering, we will have another instance of Paxos decide the Paxos group, keeping state of the membership list of nodes. The other instance of paxos will use this membership state as the basis for sending Prepare and Accept messages and achieving majority among the replicas.
+
+Implementation Schedule
+
+We plan on dividing the work into individual sections for independent work, along with meetings twice a week to gauge progress. Using a common github repository, we will be able to both test and review each others’ code. This will promote accountability within the group as well as friendly collaboration if one of us gets stuck on implementing a particular section of the app. 
