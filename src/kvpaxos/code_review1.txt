@@ -1,0 +1,3 @@
+Good job. I liked the compressed op to save space :) Algorithm looks good
+
+I don't think you need to keep all of the replies for each compressed op, however. You just need to keep one op per client, as a client can only have one outstanding op.

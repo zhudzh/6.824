@@ -1,0 +1,3 @@
+Imagine a situation like the paper's Figure 1, but in which only Site A updates file Foo. What should Ficus do in that case when the partition is merged? Explain how Ficus could tell the difference between the situation in which both Site A and Site B update Foo, and the situation in which only Site A updates Foo.
+
+In the new case, update X should be reflected in both SiteA and SiteB. There is no conflict. This is because the version vector is only updated in Site A (<1,0>). In site B, the version vector remains <0,0>. Since they only differ by one, Ficus knows that there has only been one update. If There are two independent updates, the version vectors would be <1,0> and <0,1>, and they differ by more than 1.

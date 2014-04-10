@@ -1,0 +1,3 @@
+Honestly, the code was a little hard to read, especially in the diff format. I suggest using more modular functions as well :)
+
+Overall though, the algorithm looks fine. Small thing, but I like the concise Op struct.
