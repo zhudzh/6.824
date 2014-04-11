@@ -1,0 +1,5 @@
+Suppose we build a distributed filesystem using Bayou, and the system has a copy operation. Initially, file A contains "foo" and file B contains "bar". On one node, a user copies file A to file B, overwriting the old contents of B. On another node, a user copies file B to file A. After both operations are committed, we want both files to contain "foo" or for both files to contain "bar". Sketch a dependency check and merge procedure for the copy operation that makes this work. How does Bayou ensure that all the nodes agree about whether A and B contain "foo" or "bar"?
+
+Bayou ensures that all nodes agree by enforcing that conflict resolution must be determinstic and applied in the same order (using timestamps).
+
+When node 1 writes B to A, he puts a dependancy check that B is the same when he tentatively does the write as when it is applied. Node 2 does the same. These checks will keep the old state and new state, and then the writes will be applied in timestamp order

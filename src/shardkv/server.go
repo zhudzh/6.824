@@ -329,7 +329,7 @@ func (kv *ShardKV) performReconfiguration(op *Op) {
     }
   }
 
-  if new_gid != kv.gid{
+  if new_gid != kv.gid{ //either way, we need to get new KV!
     kv.gid = new_gid
     DPrintf2("Server %s has changed its role in this Config! My new gid is %v", kv.id, kv.gid)
 
@@ -355,15 +355,6 @@ func (kv *ShardKV) performReconfiguration(op *Op) {
       DPrintf3("Server %s has no old state from replica group %v! Initializing state", kv.id, kv.gid)
       kv.kvs[op.ReconfigurationConfig.Num] = make(map[string]string)
     }
-    if kv.gid != -1 { // we have an actual gid
-      //change paxos groups
-      DPrintf3("Server %s has changed groups, must make new paxos group!", kv.id)
-      rpcs := rpc.NewServer()
-      rpcs.Register(kv)
-
-      kv.px = paxos.Make(op.ReconfigurationConfig.Groups[kv.gid], new_me, rpcs)
-      fmt.Println(old_config.Groups)
-    }  
 
   }
 }
