@@ -24,6 +24,7 @@ func (sm *ShardMaster) DPrintf(format string, a ...interface{}) (n int, err erro
   }
   return
 }
+
 type ShardMaster struct {
   mu sync.Mutex
   state_mu sync.Mutex
@@ -310,7 +311,7 @@ func (sm *ShardMaster) applyLog() interface {} {
   return cur_config
 }
 
-func (sm *ShardMaster) getValue (config_num int) interface {} {
+func (sm *ShardMaster) getValue(config_num int) interface {} {
   to := 10 * time.Millisecond
   for {
       decided, op_rcv_interface := sm.px.Status(config_num)

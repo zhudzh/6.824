@@ -20,6 +20,7 @@ const (
   Get = "Get"
   Put = "Put"
   Noop = "Noop"
+  Reconfiguration = "Reconfiguration"
 )
 
 type Err string
@@ -50,6 +51,16 @@ type GetArgs struct {
 type GetReply struct {
   Err Err
   Value string
+}
+
+type GetShardArgs struct {
+  ConfigNum int
+  GID int64
+}
+
+type GetShardReply struct {
+  Err Err
+  KV map[string]string
 }
 
 
