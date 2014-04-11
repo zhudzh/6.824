@@ -15,6 +15,13 @@ const (
   ErrNoKey = "ErrNoKey"
   ErrWrongGroup = "ErrWrongGroup"
 )
+
+const (
+  Get = "Get"
+  Put = "Put"
+  Noop = "Noop"
+)
+
 type Err string
 
 type PutArgs struct {
@@ -24,7 +31,8 @@ type PutArgs struct {
   // You'll have to add definitions here.
   // Field names must start with capital letters,
   // otherwise RPC will break.
-
+  SeqNum int64
+  ClientID int64
 }
 
 type PutReply struct {
@@ -35,6 +43,8 @@ type PutReply struct {
 type GetArgs struct {
   Key string
   // You'll have to add definitions here.
+  SeqNum int64
+  ClientID int64
 }
 
 type GetReply struct {

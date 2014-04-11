@@ -12,21 +12,23 @@ import "syscall"
 import "encoding/gob"
 import "math/rand"
 import "shardmaster"
+import "strconv"
 
-const Debug=0
+const Debug=1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
-        if Debug > 0 {
-                log.Printf(format, a...)
-        }
-        return
+  if Debug > 1 {
+    n, err = fmt.Printf(format + "\n", a...)
+  }
+  return
 }
 
-
-type Op struct {
-  // Your definitions here.
+func DPrintf2(format string, a ...interface{}) (n int, err error) {
+  if Debug > 0 {
+    n, err = fmt.Printf(format + "\n", a...)
+  }
+  return
 }
-
 
 type ShardKV struct {
   mu sync.Mutex
@@ -40,16 +42,219 @@ type ShardKV struct {
   gid int64 // my replica group ID
 
   // Your definitions here.
+  kv map[string]string
+  client_last_op map[int64]*Op
+  client_max_seq map[int64]int64
+  request_noop_channel chan int
+  state_mu sync.Mutex
+  curr_config Config
 }
 
+type Op struct {
+  Type string
+  GetArgs *GetArgs
+  GetReply *GetReply
+  PutArgs *PutArgs  
+  PutReply *PutReply
+  PaxosSeq int
+  ClientID int64
+  SeqNum int64
+}
+
+func (kv *ShardKV) sequenceHandled(client_id int64, seq_num int64) (*Op, bool){
+  kv.state_mu.Lock()
+  defer kv.state_mu.Unlock()
+
+  _, exists := kv.client_last_op[client_id]
+  if exists == false{
+    kv.client_last_op[client_id] = &Op{}
+    kv.client_max_seq[client_id] = -1
+  }
+
+  if seq_num <= kv.client_max_seq[client_id] {
+    return kv.client_last_op[client_id], true
+  }
+  return &Op{}, false
+}
+
+func (kv *ShardKV) performGet(op *Op){
+  DPrintf("Server %d Applying Get operation", kv.me)
+  op.GetReply.Value = kv.kv[op.GetArgs.Key]
+  op.GetReply.Err = OK
+}
+
+func (kv *ShardKV) performPut(op *Op) {
+  DPrintf("Server %d Applying Put operation. (%d %d) with %s -> %s \n", kv.me, op.ClientID, op.SeqNum, op.PutArgs.Key, op.PutArgs.Value)
+  var new_val string
+  if op.PutArgs.DoHash{
+    prev_val, exists := kv.kv[op.PutArgs.Key]
+    if exists == false {
+      prev_val = ""
+    }
+    new_val = strconv.Itoa(int(hash(prev_val + op.PutArgs.Value))) // new value is the hash of the prev_val and value
+    op.PutReply.PreviousValue = prev_val
+  } else {
+    new_val = op.PutArgs.Value
+  }
+  kv.kv[op.PutArgs.Key] = new_val
+  op.PutReply.Err = OK
+}
+
+func (kv *ShardKV) getOpConensus(op *Op, seq_num int) bool{
+  DPrintf("Server %d trying to get consenus for %d with possible op %#v", kv.me, seq_num, op)
+  kv.px.Start(seq_num, op)
+  var op_rcv interface{}
+  var decided bool
+
+  to := 10 * time.Millisecond
+  for {
+    decided, op_rcv = kv.px.Status(seq_num)
+    if decided {
+      break 
+    }
+    DPrintf("Server %d trying to get consenus for %d with possible op %#v. Op is not decided, wait and try again!", kv.me, seq_num, op)
+    time.Sleep(to)
+    if to < 10 * time.Second {
+      to *= 2
+    }
+  }
+  DPrintf("Server %d got paxos consensus for # %d for op %#v Op is same?: %t", kv.me, seq_num, op_rcv,  op_rcv == op)
+
+  return op_rcv == op
+}
+
+func (kv *ShardKV) performOp(op *Op, seq int) {
+  if op.Type == Noop{
+    DPrintf("Server %d Applying Noop operation", kv.me)
+    return
+  }
+
+  handled_op, handled := kv.sequenceHandled(op.ClientID, op.SeqNum)
+  if handled{
+    DPrintf("Server %d has already handled op from client %d, seq num %d (%d, %d) Paxos seq %d!", kv.me, op.ClientID, op.SeqNum, handled_op.ClientID, handled_op.SeqNum, handled_op.PaxosSeq)
+  } else {
+    switch op.Type{
+    case Get:
+      kv.performGet(op)
+    case Put:
+      kv.performPut(op)
+    }
+    kv.state_mu.Lock()
+    kv.client_max_seq[op.ClientID] = op.SeqNum
+    kv.client_last_op[op.ClientID] = op
+    kv.state_mu.Unlock()
+  }
+}
+
+func (kv *ShardKV) applyOps() {
+  time.Sleep(100 * time.Millisecond)
+  seq := 0
+  for {
+    select {      
+    case max_seq := <- kv.request_noop_channel:
+      for seq_start := seq; seq_start < max_seq; seq_start++{
+        DPrintf("Server %d Proposing noop for paxos instance: %d", kv.me, seq_start)
+        kv.px.Start(seq_start, &Op{Type: Noop})
+      }  
+
+    default:
+      decided, rcv_op := kv.px.Status(seq)
+      var op *Op
+      switch rcv_op.(type){
+      case Op:
+        temp := rcv_op.(Op)
+        op = &temp
+      case *Op:
+        op = rcv_op.(*Op)
+      }
+      if decided {
+        DPrintf("Server %d Applying op %d: %#v ", kv.me,seq, op)
+        kv.performOp(op, seq)
+        seq++
+      } else {          
+        time.Sleep(5 * time.Millisecond)
+      }
+    }    
+  }
+}
+
+func (kv *ShardKV) putOpInLog(op *Op) int{
+  attempted_instance := kv.px.Max() + 1
+  DPrintf("Server %d Op %#v is trying with seq %d", kv.me, op, attempted_instance)
+  performed := kv.getOpConensus(op, attempted_instance)
+  for ! performed{
+    attempted_instance++
+    DPrintf("Server %d Op %#v was not performed! is trying again with seq %d", kv.me, op, attempted_instance)    
+    performed = kv.getOpConensus(op, attempted_instance)
+  }
+  op.PaxosSeq = attempted_instance
+
+  //now op is in log, must get noops if needed
+  time.Sleep(50 * time.Millisecond)
+  _, handled := kv.sequenceHandled(op.ClientID, op.SeqNum)
+  for ! handled{
+    kv.request_noop_channel <- attempted_instance
+    time.Sleep(500 * time.Millisecond)
+    _, handled = kv.sequenceHandled(op.ClientID, op.SeqNum)
+  }
+  
+  kv.px.Done(attempted_instance)
+  DPrintf("Server %d has handled op for first time from client %d, seq num %d Paxos seq %d!", kv.me, op.ClientID, op.SeqNum, op.PaxosSeq)
+  return attempted_instance
+}
 
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
-  // Your code here.
+  kv.mu.Lock()
+  defer kv.mu.Unlock()
+
+  handled_op, handled := kv.sequenceHandled(args.ClientID, args.SeqNum)
+
+  if handled{
+    if args.SeqNum == kv.client_max_seq[args.ClientID]{ // has already processed 
+      DPrintf("Server %d says op has already been processed and is most recent! %#v", kv.me, handled_op)
+      reply.Value = handled_op.GetReply.Value
+      reply.Err = handled_op.GetReply.Err
+      DPrintf("Server %d finished request! Op was duplicate, so returning original reply %#v", kv.me, reply)
+      return nil
+    } else {
+      DPrintf("Server %d says op has already been processed and is not most recent! %#v", kv.me, handled_op)
+      return nil
+    }
+  }
+
+  DPrintf("Server %d Received get request!", kv.me)
+  op := &Op{Type: Get, GetArgs: args, GetReply: reply, ClientID: args.ClientID, SeqNum: args.SeqNum}
+  instance_num := kv.putOpInLog(op)
+
+  DPrintf("Server %d finished get request %d, %#v!", kv.me, instance_num, op)
   return nil
 }
 
 func (kv *ShardKV) Put(args *PutArgs, reply *PutReply) error {
-  // Your code here.
+  kv.mu.Lock()
+  defer kv.mu.Unlock()
+  DPrintf("Server %d received put request %v -> %v! DoHash? %t. Client: %d Seq #: %d", kv.me, args.Key, args.Value, args.DoHash, args.ClientID, args.SeqNum)
+
+  handled_op, handled := kv.sequenceHandled(args.ClientID, args.SeqNum)
+
+  if handled{
+    if args.SeqNum == kv.client_max_seq[args.ClientID]{ // has already processed 
+      DPrintf("Server %d says op has already been processed and is most recent! %#v", kv.me, handled_op)
+      reply.PreviousValue = handled_op.PutReply.PreviousValue
+      reply.Err = handled_op.PutReply.Err
+      DPrintf("Server %d finished request! Op was duplicate, so returning original reply %#v", kv.me, reply)
+      return nil
+    } else {
+      DPrintf("Server %d says op has already been processed and is not most recent! %#v", kv.me, handled_op)
+      return nil
+    }
+  }
+
+  DPrintf("Server %d received put request %v -> %v! DoHash? %t. Client: %d Seq #: %d", kv.me, args.Key, args.Value, args.DoHash, args.ClientID, args.SeqNum)
+  op := &Op{Type: Put, PutArgs: args, PutReply: reply, ClientID: args.ClientID, SeqNum: args.SeqNum}
+  instance_num := kv.putOpInLog(op)
+  
+  DPrintf("Server %d finished put request %d, Args: %v Reply: %v!", kv.me, instance_num, args, reply)
   return nil
 }
 
@@ -58,6 +263,9 @@ func (kv *ShardKV) Put(args *PutArgs, reply *PutReply) error {
 // if so, re-configure.
 //
 func (kv *ShardKV) tick() {
+  DPrintf("Server %d called tick function", kv.me)
+  kv.sm.
+
 }
 
 
@@ -80,6 +288,10 @@ func (kv *ShardKV) kill() {
 func StartServer(gid int64, shardmasters []string,
                  servers []string, me int) *ShardKV {
   gob.Register(Op{})
+  gob.Register(GetArgs{})
+  gob.Register(GetReply{})
+  gob.Register(PutArgs{})
+  gob.Register(PutReply{})
 
   kv := new(ShardKV)
   kv.me = me
@@ -88,6 +300,12 @@ func StartServer(gid int64, shardmasters []string,
 
   // Your initialization code here.
   // Don't call Join().
+  kv.kv = make(map[string]string)
+  kv.client_last_op = make(map[int64]*Op)
+  kv.client_max_seq = make(map[int64]int64)
+  kv.request_noop_channel = make(chan int)
+
+  go kv.applyOps()
 
   rpcs := rpc.NewServer()
   rpcs.Register(kv)

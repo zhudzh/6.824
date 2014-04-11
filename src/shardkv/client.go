@@ -5,21 +5,33 @@ import "net/rpc"
 import "time"
 import "sync"
 import "fmt"
+import crrand "crypto/rand"
+import "math/big"
+
 
 type Clerk struct {
   mu sync.Mutex // one RPC at a time
   sm *shardmaster.Clerk
   config shardmaster.Config
   // You'll have to modify Clerk.
+  id int64
+  seq_num int64  
 }
-
-
 
 func MakeClerk(shardmasters []string) *Clerk {
   ck := new(Clerk)
   ck.sm = shardmaster.MakeClerk(shardmasters)
   // You'll have to modify MakeClerk.
+  ck.id = nrand()
+  ck.seq_num = 0
   return ck
+}
+
+func nrand() int64 {
+  max := big.NewInt(int64(1) << 62)
+  bigx, _ := crrand.Int(crrand.Reader, max)
+  x := bigx.Int64()
+  return x
 }
 
 //
@@ -75,11 +87,12 @@ func key2shard(key string) int {
 // keeps trying forever in the face of all other errors.
 //
 func (ck *Clerk) Get(key string) string {
+  DPrintf("Clerk called Get method with key: %v", key)
   ck.mu.Lock()
   defer ck.mu.Unlock()
 
   // You'll have to modify Get().
-
+  ck.seq_num++
   for {
     shard := key2shard(key)
 
@@ -92,6 +105,8 @@ func (ck *Clerk) Get(key string) string {
       for _, srv := range servers {
         args := &GetArgs{}
         args.Key = key
+        args.SeqNum = ck.seq_num
+        args.ClientID = ck.id
         var reply GetReply
         ok := call(srv, "ShardKV.Get", args, &reply)
         if ok && (reply.Err == OK || reply.Err == ErrNoKey) {
@@ -112,10 +127,12 @@ func (ck *Clerk) Get(key string) string {
 }
 
 func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
+  DPrintf("Clerk called Put method with key: %v, value: %v, dohash: %t", key, value, dohash)
   ck.mu.Lock()
   defer ck.mu.Unlock()
 
   // You'll have to modify Put().
+  ck.seq_num++
 
   for {
     shard := key2shard(key)
@@ -131,6 +148,8 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
         args.Key = key
         args.Value = value
         args.DoHash = dohash
+        args.SeqNum = ck.seq_num
+        args.ClientID = ck.id
         var reply PutReply
         ok := call(srv, "ShardKV.Put", args, &reply)
         if ok && reply.Err == OK {
