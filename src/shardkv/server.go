@@ -233,6 +233,7 @@ func (kv *ShardKV) putOpInLog(op *Op) int{
 }
 
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
+  time.Sleep(700*time.Millisecond)
   kv.mu.Lock()
   defer kv.mu.Unlock()
 
@@ -268,6 +269,7 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
 }
 
 func (kv *ShardKV) Put(args *PutArgs, reply *PutReply) error {
+  time.Sleep(700*time.Millisecond)
   kv.mu.Lock()
   defer kv.mu.Unlock()
 
