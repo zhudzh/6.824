@@ -21,6 +21,7 @@ const (
   Put = "Put"
   Noop = "Noop"
   Reconfiguration = "Reconfiguration"
+  GetShard = "GetShard"
 )
 
 type Err string
@@ -56,6 +57,7 @@ type GetReply struct {
 type GetShardArgs struct {
   ConfigNum int
   GID int64
+  ShardNum int
 }
 
 type GetShardReply struct {

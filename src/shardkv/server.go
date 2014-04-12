@@ -15,7 +15,7 @@ import "shardmaster"
 import "strconv"
 import "math"
 
-const Debug=0
+const Debug=-1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
   if Debug > 1 {
@@ -52,14 +52,14 @@ type ShardKV struct {
 
   // Your definitions here.
   id string
-  socket_me string 
-  kvs map[int]map[string]string
-  my_gid map[int]int64
+  kvs [shardmaster.NShards]map[string]string
   client_last_op map[int64]*Op
   client_max_seq map[int64]int64
   request_noop_channel chan int
   state_mu sync.Mutex
+  getshard_mu sync.Mutex
   curr_config shardmaster.Config
+  handled_shards [shardmaster.NShards]int64
   max_config_in_log int
 }
 
@@ -70,6 +70,8 @@ type Op struct {
   PutArgs *PutArgs  
   PutReply *PutReply
   ReconfigurationConfig shardmaster.Config
+  GetShardArgs *GetShardArgs
+  GetShardReply *GetShardReply
   PaxosSeq int
   ClientID int64
   SeqNum int64
@@ -88,20 +90,22 @@ func (kv *ShardKV) sequenceHandled(client_id int64, seq_num int64) (*Op, bool){
   if seq_num <= kv.client_max_seq[client_id] {
     return kv.client_last_op[client_id], true
   }
+  if client_id == 0 {
+  }
   return &Op{}, false
 }
 
 func (kv *ShardKV) performGet(op *Op){
   DPrintf("Server %s Applying Get operation", kv.id)
-  op.GetReply.Value = kv.kvs[kv.curr_config.Num][op.GetArgs.Key]
+  op.GetReply.Value = kv.kvs[key2shard(op.GetArgs.Key)][op.GetArgs.Key]
   op.GetReply.Err = OK
 }
 
 func (kv *ShardKV) performPut(op *Op) {
-  DPrintf("Server %s Applying Put operation. (%d %d) with %s -> %s \n", kv.id, op.ClientID, op.SeqNum, op.PutArgs.Key, op.PutArgs.Value)
+  DPrintf("Server %s Applying Put operation. (%d %d) with %s -> %s", kv.id, op.ClientID, op.SeqNum, op.PutArgs.Key, op.PutArgs.Value)
   var new_val string
   if op.PutArgs.DoHash{
-    prev_val, exists := kv.kvs[kv.curr_config.Num][op.PutArgs.Key]
+    prev_val, exists := kv.kvs[key2shard(op.PutArgs.Key)][op.PutArgs.Key]
     if exists == false {
       prev_val = ""
     }
@@ -110,7 +114,7 @@ func (kv *ShardKV) performPut(op *Op) {
   } else {
     new_val = op.PutArgs.Value
   }
-  kv.kvs[kv.curr_config.Num][op.PutArgs.Key] = new_val
+  kv.kvs[key2shard(op.PutArgs.Key)][op.PutArgs.Key] = new_val
   op.PutReply.Err = OK
 }
 
@@ -140,7 +144,7 @@ func (kv *ShardKV) getOpConensus(op *Op, seq_num int) bool{
 func (kv *ShardKV) performOp(op *Op, seq int) {
   switch op.Type{
   case Noop:
-    DPrintf("Server %s Applying Noop operation", kv.socket_me)
+    DPrintf("Server %s Applying Noop operation", kv.id)
     return
   }
 
@@ -154,8 +158,11 @@ func (kv *ShardKV) performOp(op *Op, seq int) {
     case Put:
       kv.performPut(op)
     case Reconfiguration:
-      DPrintf2("Server %s applying reconfig: cli : %v, seq: %v seq handled", kv.id, op.ClientID, op.SeqNum)
+      DPrintf2("Server %s applying reconfig: cli : %v, seq: %v ", kv.id, op.ClientID, op.SeqNum)
       kv.performReconfiguration(op)
+    case GetShard:
+      DPrintf3("Server %s applying getshard: cli : %v, seq: %v", kv.id, op.ClientID, op.SeqNum)
+      kv.performGetShard(op)
     }
     kv.state_mu.Lock()
     kv.client_max_seq[op.ClientID] = op.SeqNum
@@ -168,14 +175,16 @@ func (kv *ShardKV) applyOps() {
   time.Sleep(100 * time.Millisecond)
   seq := 0
   for {
-    select {      
+    select {
     case max_seq := <- kv.request_noop_channel:
+      DPrintf("%s got here! case channel", kv.id)
       for seq_start := seq; seq_start < max_seq; seq_start++{
         DPrintf("Server %s Proposing noop for paxos instance: %d", kv.id, seq_start)
         kv.px.Start(seq_start, &Op{Type: Noop})
       }  
 
     default:
+      // DPrintf("%s got here! default case", kv.id)
       decided, rcv_op := kv.px.Status(seq)
       var op *Op
       switch rcv_op.(type){
@@ -199,11 +208,11 @@ func (kv *ShardKV) applyOps() {
 func (kv *ShardKV) putOpInLog(op *Op) int{
   attempted_instance := kv.px.Max() + 1
   DPrintf("Server %s Client %v Seq %v is trying with seq %d", kv.id, op.ClientID, op.SeqNum, attempted_instance)
-  performed := kv.getOpConensus(op, attempted_instance)
-  for ! performed{
+  op_in_log := kv.getOpConensus(op, attempted_instance)
+  for ! op_in_log{
     attempted_instance++
-    DPrintf("Server %s Op %#v was not performed! is trying again with seq %d", kv.id, op, attempted_instance)    
-    performed = kv.getOpConensus(op, attempted_instance)
+    DPrintf("Server %s Op %#v was not op_in_log! is trying again with seq %d", kv.id, op, attempted_instance)    
+    op_in_log = kv.getOpConensus(op, attempted_instance)
   }
   op.PaxosSeq = attempted_instance
 
@@ -211,7 +220,9 @@ func (kv *ShardKV) putOpInLog(op *Op) int{
   time.Sleep(50 * time.Millisecond)
   _, handled := kv.sequenceHandled(op.ClientID, op.SeqNum)
   for ! handled{
+    DPrintf("Server %s Waiting for noops for op Type %s for seq %d", kv.id, op.Type, attempted_instance)    
     kv.request_noop_channel <- attempted_instance
+    DPrintf("Server %s Sent noop request for op Type %s for seq %d", kv.id, op.Type, attempted_instance) 
     time.Sleep(500 * time.Millisecond)
     _, handled = kv.sequenceHandled(op.ClientID, op.SeqNum)
   }
@@ -227,8 +238,8 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
 
   shard := key2shard(args.Key)
   gid := kv.curr_config.Shards[shard]
-  if gid != kv.gid {
-    DPrintf2("Server %s: Wrong Server in Get Request! I am gid %v and shard belongs to gid: %v", kv.id, kv.gid, gid)
+  if gid != kv.gid || kv.gid != kv.handled_shards[shard]{
+    DPrintf2("Server %s: Wrong Server in Get Request! I am gid %v and shard belongs to gid: %v. Or, I have made a commitment to not handle!", kv.id, kv.gid, gid)
     reply.Err = ErrWrongGroup
     return nil
   }
@@ -262,8 +273,8 @@ func (kv *ShardKV) Put(args *PutArgs, reply *PutReply) error {
 
   shard := key2shard(args.Key)
   gid := kv.curr_config.Shards[shard]
-  if gid != kv.gid {
-    DPrintf2("Server %s: Wrong Server in Put request! I am gid %v and shard belongs to gid: %v", kv.id, kv.gid, gid)
+  if gid != kv.gid || kv.gid != kv.handled_shards[shard]{
+    DPrintf2("Server %s: Wrong Server in Put request! I am gid %v and shard belongs to gid: %v. Or, I have made a commitment to not handle!", kv.id, kv.gid, gid)
     reply.Err = ErrWrongGroup
     return nil
   }
@@ -292,71 +303,95 @@ func (kv *ShardKV) Put(args *PutArgs, reply *PutReply) error {
 }
 
 func (kv *ShardKV) GetShard(args *GetShardArgs, reply *GetShardReply) error{
-  //locking?
-  //make sure do not reply until I have applied up to config change where config.Num == args.ConfigNum
-  DPrintf2("Server %s received GetShard request for the state of config num: %d (gid: %d)!", kv.id, args.ConfigNum, args.GID)
-  if args.GID != kv.my_gid[args.ConfigNum]{
-    DPrintf2("I DID NOT HAVE THIS GID!")
+  kv.getshard_mu.Lock()
+  defer kv.getshard_mu.Unlock()
+
+  DPrintf2("Server %s received GetShard request for the state of shard %d", kv.id, args.ShardNum)
+  if args.GID != kv.gid{
+    DPrintf2("REQUESTED FROM WRONG GID!")
     reply.Err = ErrWrongGroup
     return nil
   }
-  reply.KV = kv.kvs[args.ConfigNum]
+
+  client_id := int64(1000 + args.ShardNum)
+  seq_num := int64(args.ConfigNum)
+
+  handled_op, handled := kv.sequenceHandled(client_id, seq_num)
+
+  if handled{
+    if seq_num == kv.client_max_seq[client_id]{ // has already processed 
+      DPrintf3("Server %s says op has already been processed and is most recent! %#v", kv.id, handled_op)
+      reply.KV = handled_op.GetShardReply.KV
+      reply.Err = handled_op.GetShardReply.Err
+      DPrintf3("Server %s finished request! Op was duplicate, so returning original reply %#v", kv.id, reply)
+      return nil
+    } else {
+      DPrintf3("Server %s says op has already been processed and is not most recent! %#v", kv.id, handled_op)
+      return nil
+    }
+  }
+
+  reply.KV = kv.kvs[args.ShardNum]
   reply.Err = OK
-  time.Sleep(1000*time.Millisecond)
+  op := &Op{Type: GetShard, GetShardArgs: args, GetShardReply: reply, ClientID: client_id, SeqNum: seq_num}
+  kv.putOpInLog(op)
   return nil
 }
 
-func (kv *ShardKV) performReconfiguration(op *Op) {
-  kv.mu.Lock()
-  defer kv.mu.Unlock()
+//called in performOp
+func (kv *ShardKV) performGetShard(op *Op) {
+  if op.GetShardArgs.ConfigNum != kv.curr_config.Num || op.GetShardArgs.GID != kv.gid{
+    DPrintf3("Server %s cannot perform GetShard because config has changed: current %d, asked %d or not the right gid me %d, asked %d!", kv.id, kv.curr_config.Num, op.GetShardArgs.ConfigNum, kv.gid, op.GetShardArgs.GID)
+  } else {
+    DPrintf3("Server %s performing GetShard! Not handling shard : %d", kv.id, op.GetShardArgs.ShardNum)
+    kv.handled_shards[op.GetShardArgs.ShardNum] = -1
+  }  
+}
 
+//helper function for state transfer for Perform reconfig
+func (kv *ShardKV) requestShard(shard_num int, old_config shardmaster.Config){
+  DPrintf2("Server %s is requesting shard_num %v", kv.id, shard_num)
+  // do state transfer
+  target_gid := old_config.Shards[shard_num]
+  servers, ok := old_config.Groups[target_gid]
+  args := &GetShardArgs{ShardNum: shard_num, ConfigNum: old_config.Num, GID: target_gid}
+  var reply GetShardReply
+  if ok { // there is state to get!
+    DPrintf2("Server %s is getting shard num: %v from group: %v!", kv.id, shard_num, target_gid)
+    for _, srv := range servers {
+      ok := call(srv, "ShardKV.GetShard", args, &reply)
+      if ok && reply.Err == OK{
+        DPrintf2("Server %s received shard num: %v from group: %v!", kv.id, shard_num, target_gid)
+        break
+      }
+    }
+    DPrintf2("Server %s has finished getting state from member of new replica group! %v", kv.id, target_gid)
+    if reply.Err != OK{
+      log.Fatal("Server could not get state because none of the pinged servers were in the replica group!")
+    }
+    kv.kvs[shard_num] = reply.KV
+  } else { //there is no state to get!
+    DPrintf2("Server %s has no old state from replica group %v! Initializing state", kv.id, target_gid)
+    kv.kvs[shard_num] = make(map[string]string)
+  }
+}
+
+//called in performOp
+func (kv *ShardKV) performReconfiguration(op *Op) {
   DPrintf2("Server %s Applying Reconfiguration! %v", kv.id, op.ReconfigurationConfig)
   if op.ReconfigurationConfig.Num != kv.curr_config.Num + 1 {
     log.Fatal("Applying a config which is not sequential!", op.ReconfigurationConfig.Num, kv.curr_config.Num + 1)
   }
   old_config := kv.curr_config
   kv.curr_config = op.ReconfigurationConfig
+  kv.handled_shards = kv.curr_config.Shards
 
-  new_gid := int64(-1)
-  new_me := -1
-  for gid, replica_groups := range op.ReconfigurationConfig.Groups {
-    for idx, socket := range replica_groups {
-      if socket == kv.socket_me{
-        new_gid = gid
-        new_me = idx
-        break
-      }
+  for shard_num, gid := range kv.curr_config.Shards {
+    if gid == kv.gid && old_config.Shards[shard_num] != kv.gid{ //I own this shard now, but didn't before!
+      kv.requestShard(shard_num, old_config)
     }
   }
 
-  if new_gid != kv.gid{ //either way, we need to get new KV!
-    kv.gid = new_gid
-    DPrintf2("Server %s has changed its role in this Config! My new gid is %v", kv.id, kv.gid)
-
-    // do state transfer
-    // modify to get correct shards, not just old group!
-    servers, ok := old_config.Groups[kv.gid]
-    args := &GetShardArgs{ConfigNum: old_config.Num}
-    var reply GetShardReply
-    if ok { // there is state to get!
-      DPrintf2("Server %s is getting state from member of new replica group %v!", kv.id, kv.gid)
-      for _, srv := range servers {
-        ok := call(srv, "ShardKV.GetShard", args, reply)
-        if ok && reply.Err == OK{
-          break
-        }
-      }
-      DPrintf3("Server %s has finished getting state from member of new replica group! %v", kv.id, kv.gid)
-      if reply.Err != OK{
-        log.Fatal("Server could not get state because none of the pinged servers were in the replica group!")
-      }
-      kv.kvs[op.ReconfigurationConfig.Num] = reply.KV
-    } else { //there is no state to get!
-      DPrintf3("Server %s has no old state from replica group %v! Initializing state", kv.id, kv.gid)
-      kv.kvs[op.ReconfigurationConfig.Num] = make(map[string]string)
-    }
-
-  }
 }
 
 func (kv *ShardKV) startReconfiguration(new_config shardmaster.Config){
@@ -376,17 +411,16 @@ func (kv *ShardKV) startReconfiguration(new_config shardmaster.Config){
 //
 func (kv *ShardKV) tick() {
   DPrintf("Server %s called tick function! Current max_config_in_log is %d", kv.id, kv.max_config_in_log)
-  new_config := kv.sm.Query(-1)
   kv.mu.Lock()
   defer kv.mu.Unlock()
+
+  new_config := kv.sm.Query(-1)
   kv.max_config_in_log = int(math.Max(float64(kv.max_config_in_log), float64(kv.curr_config.Num)))
   if new_config.Num > kv.max_config_in_log { // change this to kv.max_config_in_log
     DPrintf2("Server %s Configuration is old! Putting configs from %d to %d in log", kv.id, kv.max_config_in_log +1, new_config.Num)
     for config_num := kv.max_config_in_log +1; config_num <= new_config.Num; config_num++{
       kv.max_config_in_log = config_num
-      kv.mu.Unlock()
       kv.startReconfiguration(kv.sm.Query(config_num))
-      kv.mu.Lock()
     }    
   }
   // DPrintf("Server %s ending tick function", kv.id)
@@ -409,8 +443,7 @@ func (kv *ShardKV) kill() {
 //   in this replica group.
 // Me is the index of this server in servers[].
 //
-func StartServer(gid int64, shardmasters []string,
-                 servers []string, me int) *ShardKV {
+func StartServer(gid int64, shardmasters []string, servers []string, me int) *ShardKV {
   gob.Register(Op{})
   gob.Register(GetArgs{})
   gob.Register(GetReply{})
@@ -424,15 +457,17 @@ func StartServer(gid int64, shardmasters []string,
 
   // Your initialization code here.
   // Don't call Join().
-  kv.socket_me = servers[me]
-  kv.id = kv.socket_me[len(kv.socket_me) -1 :]
-  kv.kvs = make(map[int]map[string]string)
-  kv.kvs[-1] = make(map[string]string)
+  kv.id = strconv.Itoa(kv.me) + "_" + strconv.Itoa(int(kv.gid))
+  kv.kvs = [shardmaster.NShards]map[string]string{}
+  for idx, _ := range(kv.kvs) {
+    kv.kvs[idx] = make(map[string]string)
+  }
   kv.client_last_op = make(map[int64]*Op)
   kv.client_max_seq = make(map[int64]int64)
   kv.request_noop_channel = make(chan int)
-  kv.curr_config = shardmaster.Config{Num:-1}
-  kv.max_config_in_log = -1
+  kv.curr_config = shardmaster.Config{Num:0}
+  kv.handled_shards = [shardmaster.NShards]int64{}
+  kv.max_config_in_log = 0
   
 
   go kv.applyOps()

@@ -7,7 +7,7 @@ import "strconv"
 import "os"
 import "time"
 import "fmt"
-// import "sync"
+import "sync"
 import "math/rand"
 
 func port(tag string, host int) string {
@@ -139,132 +139,129 @@ func TestBasic(t *testing.T) {
   }
 
   fmt.Printf("  ... Passed\n")
-  time.Sleep(time.Second)
 }
 
-// func TestMove(t *testing.T) {
-//   smh, gids, ha, _, clean := setup("move", false)
-//   defer clean()
+func TestMove(t *testing.T) {
+  smh, gids, ha, _, clean := setup("move", false)
+  defer clean()
 
-//   fmt.Printf("Test: Shards really move ...\n")
+  fmt.Printf("Test: Shards really move ...\n")
 
-//   mck := shardmaster.MakeClerk(smh)
-//   mck.Join(gids[0], ha[0])
+  mck := shardmaster.MakeClerk(smh)
+  mck.Join(gids[0], ha[0])
 
-//   ck := MakeClerk(smh)
+  ck := MakeClerk(smh)
 
-//   // insert one key per shard
-//   for i := 0; i < shardmaster.NShards; i++ {
-//     ck.Put(string('0'+i), string('0'+i))
-//   }
+  // insert one key per shard
+  for i := 0; i < shardmaster.NShards; i++ {
+    ck.Put(string('0'+i), string('0'+i))
+  }
 
-//   // add group 1.
-//   mck.Join(gids[1], ha[1])
-//   time.Sleep(5 * time.Second)
+  // add group 1.
+  mck.Join(gids[1], ha[1])
+  time.Sleep(5 * time.Second)
   
-//   // check that keys are still there.
-//   for i := 0; i < shardmaster.NShards; i++ {
-//     if ck.Get(string('0'+i)) != string('0'+i) {
-//       t.Fatalf("missing key/value")
-//     }
-//   }
+  // check that keys are still there.
+  for i := 0; i < shardmaster.NShards; i++ {
+    if ck.Get(string('0'+i)) != string('0'+i) {
+      t.Fatalf("missing key/value")
+    }
+  }
 
-//   // remove sockets from group 0.
-//   for i := 0; i < len(ha[0]); i++ {
-//     os.Remove(ha[0][i])
-//   }
+  // remove sockets from group 0.
+  for i := 0; i < len(ha[0]); i++ {
+    os.Remove(ha[0][i])
+  }
 
-//   count := 0
-//   var mu sync.Mutex
-//   for i := 0; i < shardmaster.NShards; i++ {
-//     go func(me int) {
-//       myck := MakeClerk(smh)
-//       v := myck.Get(string('0'+me))
-//       if v == string('0'+me) {
-//         mu.Lock()
-//         count++
-//         mu.Unlock()
-//       } else {
-//         t.Fatalf("Get(%v) yielded %v\n", i, v)
-//       }
-//     }(i)
-//   }
+  count := 0
+  var mu sync.Mutex
+  for i := 0; i < shardmaster.NShards; i++ {
+    go func(me int) {
+      myck := MakeClerk(smh)
+      v := myck.Get(string('0'+me))
+      if v == string('0'+me) {
+        mu.Lock()
+        count++
+        mu.Unlock()
+      } else {
+        t.Fatalf("Get(%v) yielded %v\n", i, v)
+      }
+    }(i)
+  }
 
-//   time.Sleep(10 * time.Second)
+  time.Sleep(10 * time.Second)
 
-//   if count > shardmaster.NShards / 3 && count < 2*(shardmaster.NShards/3) {
-//     fmt.Printf("  ... Passed\n")
-// time.Sleep(time.Second)
-//   } else {
-//     t.Fatalf("%v keys worked after killing 1/2 of groups; wanted %v",
-//       count, shardmaster.NShards / 2)
-//   }
-// }
+  if count > shardmaster.NShards / 3 && count < 2*(shardmaster.NShards/3) {
+    fmt.Printf("  ... Passed\n")
+  } else {
+    t.Fatalf("%v keys worked after killing 1/2 of groups; wanted %v",
+      count, shardmaster.NShards / 2)
+  }
+}
 
-// func TestLimp(t *testing.T) {
-//   smh, gids, ha, sa, clean := setup("limp", false)
-//   defer clean()
+func TestLimp(t *testing.T) {
+  smh, gids, ha, sa, clean := setup("limp", false)
+  defer clean()
 
-//   fmt.Printf("Test: Reconfiguration with some dead replicas ...\n")
+  fmt.Printf("Test: Reconfiguration with some dead replicas ...\n")
 
-//   mck := shardmaster.MakeClerk(smh)
-//   mck.Join(gids[0], ha[0])
+  mck := shardmaster.MakeClerk(smh)
+  mck.Join(gids[0], ha[0])
 
-//   ck := MakeClerk(smh)
+  ck := MakeClerk(smh)
 
-//   ck.Put("a", "b")
-//   if ck.Get("a") != "b" {
-//     t.Fatalf("got wrong value")
-//   }
+  ck.Put("a", "b")
+  if ck.Get("a") != "b" {
+    t.Fatalf("got wrong value")
+  }
 
-//   for g := 0; g < len(sa); g++ {
-//     sa[g][rand.Int() % len(sa[g])].kill()
-//   }
+  for g := 0; g < len(sa); g++ {
+    sa[g][rand.Int() % len(sa[g])].kill()
+  }
 
-//   keys := make([]string, 10)
-//   vals := make([]string, len(keys))
-//   for i := 0; i < len(keys); i++ {
-//     keys[i] = strconv.Itoa(rand.Int())
-//     vals[i] = strconv.Itoa(rand.Int())
-//     ck.Put(keys[i], vals[i])
-//   }
+  keys := make([]string, 10)
+  vals := make([]string, len(keys))
+  for i := 0; i < len(keys); i++ {
+    keys[i] = strconv.Itoa(rand.Int())
+    vals[i] = strconv.Itoa(rand.Int())
+    ck.Put(keys[i], vals[i])
+  }
 
-//   // are keys still there after joins?
-//   for g := 1; g < len(gids); g++ {
-//     mck.Join(gids[g], ha[g])
-//     time.Sleep(1 * time.Second)
-//     for i := 0; i < len(keys); i++ {
-//       v := ck.Get(keys[i])
-//       if v != vals[i] {
-//         t.Fatalf("joining; wrong value; g=%v k=%v wanted=%v got=%v",
-//           g, keys[i], vals[i], v)
-//       }
-//       vals[i] = strconv.Itoa(rand.Int())
-//       ck.Put(keys[i], vals[i])
-//     }
-//   }
+  // are keys still there after joins?
+  for g := 1; g < len(gids); g++ {
+    mck.Join(gids[g], ha[g])
+    time.Sleep(1 * time.Second)
+    for i := 0; i < len(keys); i++ {
+      v := ck.Get(keys[i])
+      if v != vals[i] {
+        t.Fatalf("joining; wrong value; g=%v k=%v wanted=%v got=%v",
+          g, keys[i], vals[i], v)
+      }
+      vals[i] = strconv.Itoa(rand.Int())
+      ck.Put(keys[i], vals[i])
+    }
+  }
   
-//   // are keys still there after leaves?
-//   for g := 0; g < len(gids)-1; g++ {
-//     mck.Leave(gids[g])
-//     time.Sleep(2 * time.Second)
-//     for i := 0; i < len(sa[g]); i++ {
-//       sa[g][i].kill()
-//     }
-//     for i := 0; i < len(keys); i++ {
-//       v := ck.Get(keys[i])
-//       if v != vals[i] {
-//         t.Fatalf("leaving; wrong value; g=%v k=%v wanted=%v got=%v",
-//           g, keys[i], vals[i], v)
-//       }
-//       vals[i] = strconv.Itoa(rand.Int())
-//       ck.Put(keys[i], vals[i])
-//     }
-//   }
+  // are keys still there after leaves?
+  for g := 0; g < len(gids)-1; g++ {
+    mck.Leave(gids[g])
+    time.Sleep(2 * time.Second)
+    for i := 0; i < len(sa[g]); i++ {
+      sa[g][i].kill()
+    }
+    for i := 0; i < len(keys); i++ {
+      v := ck.Get(keys[i])
+      if v != vals[i] {
+        t.Fatalf("leaving; wrong value; g=%v k=%v wanted=%v got=%v",
+          g, keys[i], vals[i], v)
+      }
+      vals[i] = strconv.Itoa(rand.Int())
+      ck.Put(keys[i], vals[i])
+    }
+  }
 
-//   fmt.Printf("  ... Passed\n")
-// time.Sleep(time.Second)
-// }
+  fmt.Printf("  ... Passed\n")
+}
 
 func doConcurrent(t *testing.T, unreliable bool) {
   smh, gids, ha, _, clean := setup("conc"+strconv.FormatBool(unreliable), unreliable)
@@ -316,16 +313,14 @@ func doConcurrent(t *testing.T, unreliable bool) {
   }
 }
 
-// func TestConcurrent(t *testing.T) {
-//   fmt.Printf("Test: Concurrent Put/Get/Move ...\n")
-//   doConcurrent(t, false)
-//   fmt.Printf("  ... Passed\n")
-// time.Sleep(time.Second)
-// }
+func TestConcurrent(t *testing.T) {
+  fmt.Printf("Test: Concurrent Put/Get/Move ...\n")
+  doConcurrent(t, false)
+  fmt.Printf("  ... Passed\n")
+}
 
-// func TestConcurrentUnreliable(t *testing.T) {
-//   fmt.Printf("Test: Concurrent Put/Get/Move (unreliable) ...\n")
-//   doConcurrent(t, true)
-//   fmt.Printf("  ... Passed\n")
-// time.Sleep(time.Second)
-// }
+func TestConcurrentUnreliable(t *testing.T) {
+  fmt.Printf("Test: Concurrent Put/Get/Move (unreliable) ...\n")
+  doConcurrent(t, true)
+  fmt.Printf("  ... Passed\n")
+}
