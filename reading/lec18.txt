@@ -1,0 +1,10 @@
+Consider a Kademlia-based key-value store with a million users, with non-mutable keys: once a key is published, it will not be modified. The k/v store experiences a network partition into two roughly equal partitions A and B for 1.5 hours.
+
+X is a very popular key. Would nodes in both A and B likely be able to access X's value (1) during the partition? (2) 10 minutes after the network is joined? (3) 25 hours after the network is joined?
+
+Yes, during the partition, both will know A and B because the key is popular and likely cached in both partitions.
+10 minutes after joining, yes, definitely, Kademilia ensures this
+25 hours after the partition- not at first, because the cached values expire every 24 hours, but the original publisher will republish, and Kademilia will get the key
+
+(optional) Would your answer change if X was an un-popular key?
+During the paritition, it would change, because the value was unlikely to be cached in both parititons.

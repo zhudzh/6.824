@@ -1,0 +1,1 @@
+Isn't it possible to get a stale value (since the value will be cached at any node involved in the lookup, and the get-value will return the value if the value is in the cache). Is this not a problem?
