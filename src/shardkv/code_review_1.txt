@@ -1,0 +1,3 @@
+Overall, it looks good. Paxos looks fine. Good job keeping ShardKV functions compact and modular.
+
+Why do you need kv.reconfiguring? It seems like kv.isfrozen should take care of this.
