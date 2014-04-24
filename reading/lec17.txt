@@ -1,0 +1,3 @@
+Suppose Dynamo server S1 is perfectly healthy with a working network connection. By mistake, an administrator instructs server S2 to remove S1 using the mechanisms described in 4.8.1 and 4.9. It takes a while for the membership change to propagate from S2 to the rest of the system (including S1), so for a while some clients and servers will think that S1 is still part of the system. Will Dynamo operate correctly in this situation? Why, or why not?
+
+Yes, Dynamo will be fine. S1 will eventually be removed. In the meantime, the gossip protocol will keep the other servers up to date.
